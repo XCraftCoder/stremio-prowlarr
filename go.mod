@@ -4,6 +4,7 @@ go 1.22.4
 
 require (
 	github.com/caarlos0/env/v11 v11.0.1
+	github.com/coocood/freecache v1.2.4
 	github.com/go-resty/resty/v2 v2.13.1
 	github.com/gofiber/fiber/v2 v2.52.4
 	github.com/joho/godotenv v1.5.1
@@ -14,6 +15,7 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.0.5 // indirect
+	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/klauspost/compress v1.17.0 // indirect

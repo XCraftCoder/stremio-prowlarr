@@ -13,8 +13,9 @@ import (
 )
 
 type config struct {
-	JackettURL    string `env:"JACKETT_URL"`
-	JackettAPIKey string `env:"JACKETT_API_KEY"`
+	JackettURL         string `env:"JACKETT_URL"`
+	JackettAPIKey      string `env:"JACKETT_API_KEY"`
+	RealDebridAPIToken string `env:"REAL_DEBRID_API_TOKEN"`
 }
 
 func main() {
@@ -30,10 +31,13 @@ func main() {
 		addon.WithID("stremio.addon.jackett"),
 		addon.WithName("Jackett"),
 		addon.WithJackett(cfg.JackettURL, cfg.JackettAPIKey),
+		addon.WithRealDebrid(cfg.RealDebridAPIToken),
 	)
 
 	app.Get("/manifest.json", add.HandleGetManifest)
 	app.Get("/stream/:type/:id.json", add.HandleGetStreams)
+	app.Get("/stream/:type/:id.json/download/:infoHash", add.HandleDownload)
+	app.Head("/stream/:type/:id.json/download/:infoHash", add.HandleDownload)
 
 	log.Fatal(app.Listen(":7000"))
 }

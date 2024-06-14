@@ -63,6 +63,7 @@ func (j *Jackett) SearchMovieTorrents(indexer Indexer, name string) ([]Torrent, 
 
 	for i := range result.Torrents {
 		result.Torrents[i].Link = strings.Replace(result.Torrents[i].Link, "http://localhost:9117", j.apiURL, 1)
+		result.Torrents[i].InfoHash = strings.ToLower(result.Torrents[i].InfoHash)
 	}
 
 	return result.Torrents, nil
@@ -89,7 +90,7 @@ func (j *Jackett) FetchMagnetURI(torrent Torrent) (Torrent, error) {
 				Trackers: torFile.AnnounceList,
 			}
 			torrent.MagnetUri = magnet.String()
-			torrent.InfoHash = magnet.InfoHashStr()
+			torrent.InfoHash = strings.ToLower(magnet.InfoHashStr())
 		} else {
 			torrent.MagnetUri = resp.Header().Get("location")
 		}
@@ -105,7 +106,7 @@ func (j *Jackett) FetchMagnetURI(torrent Torrent) (Torrent, error) {
 		if err != nil {
 			return torrent, err
 		}
-		torrent.InfoHash = magnet.InfoHashStr()
+		torrent.InfoHash = strings.ToLower(magnet.InfoHashStr())
 	}
 
 	return torrent, nil

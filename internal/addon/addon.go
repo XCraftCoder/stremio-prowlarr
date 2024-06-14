@@ -1,17 +1,26 @@
 package addon
 
 import (
+	"bytes"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/bongnv/jackett-stremio/internal/cinemeta"
+	"github.com/bongnv/jackett-stremio/internal/debrid/realdebrid"
 	"github.com/bongnv/jackett-stremio/internal/jackett"
 	"github.com/bongnv/jackett-stremio/internal/model"
 	"github.com/bongnv/jackett-stremio/internal/pipe"
+	"github.com/coocood/freecache"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/log"
+)
+
+const (
+	cacheSize          = 50 * 1024 * 1024 // 50MB
+	streamRecordExpiry = 10 * 60          // 10m
 )
 
 // Addon implements a Stremio addon
@@ -23,6 +32,8 @@ type Addon struct {
 
 	cinemetaClient *cinemeta.CineMeta
 	jackettClient  *jackett.Jackett
+	realDebrid     *realdebrid.RealDebrid
+	cache          *freecache.Cache
 }
 
 type Option func(*Addon)
@@ -32,15 +43,15 @@ type GetStreamsResponse struct {
 }
 
 type streamRecord struct {
-	contentType   ContentType
-	id            string
-	season        int
-	episode       int
-	hostURL       string
-	remoteAddress string
-	metaInfo      *model.MetaInfo
-	indexer       jackett.Indexer
-	torrent       jackett.Torrent
+	ContentType   ContentType
+	ID            string
+	Season        int
+	Episode       int
+	HostURL       string
+	RemoteAddress string
+	MetaInfo      *model.MetaInfo
+	Indexer       jackett.Indexer
+	Torrent       jackett.Torrent
 }
 
 const (
@@ -52,6 +63,7 @@ func New(opts ...Option) *Addon {
 		version:        "0.1.0",
 		description:    "A Stremio addon",
 		cinemetaClient: cinemeta.New(),
+		cache:          freecache.NewCache(cacheSize),
 	}
 
 	for _, opt := range opts {
@@ -60,6 +72,10 @@ func New(opts ...Option) *Addon {
 
 	if addon.jackettClient == nil {
 		panic("jackett client must be provided")
+	}
+
+	if addon.realDebrid == nil {
+		panic("realdebrid client must be provided")
 	}
 
 	return addon
@@ -86,6 +102,38 @@ func (add *Addon) HandleGetManifest(c *fiber.Ctx) error {
 	return c.JSON(manifest)
 }
 
+func (add *Addon) HandleDownload(c *fiber.Ctx) error {
+	infoHash := strings.ToLower(c.Params("infoHash"))
+	download, err := add.realDebrid.GetDownloadByInfoHash(infoHash)
+	if err == realdebrid.ErrNoTorrentFound {
+		val, err := add.cache.Get([]byte(infoHash))
+		if err != nil {
+			log.Errorf("Couldn't find the infoHash from cache: %v", err)
+			return err
+		}
+
+		record := streamRecord{}
+		err = gob.NewDecoder(bytes.NewReader(val)).Decode(&record)
+		if err != nil {
+			log.WithContext(c.Context()).Errorf("Couldn't decode the cached data: %v", err)
+			return err
+		}
+
+		download, err = add.realDebrid.GetDownloadByMagnetURI(record.Torrent.MagnetUri)
+		if err != nil {
+			log.WithContext(c.Context()).Errorf("Couldn't add magnet link: %v", err)
+			return err
+		}
+	}
+
+	if err != nil {
+		log.Errorf("Couldn't find download link from the given hash %s: %v", infoHash, err)
+		return err
+	}
+
+	return c.Redirect(download)
+}
+
 func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p := pipe.New(add.sourceFromContext(c))
 
@@ -101,10 +149,23 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 			return nil
 		}
 
+		buf := &bytes.Buffer{}
+		err := gob.NewEncoder(buf).Encode(r)
+		if err != nil {
+			log.Errorf("Failed to encode: %v", err)
+			return nil
+		}
+
+		err = add.cache.Set([]byte(r.Torrent.InfoHash), buf.Bytes(), 10*60)
+		if err != nil {
+			log.Errorf("Failed to cache the record: %s, %v", r.Torrent.InfoHash, err)
+			return nil
+		}
+
 		results = append(results, StreamItem{
 			Name:  "Movie",
-			Title: fmt.Sprintf("%s|%d|%d|%s", r.torrent.Title, r.torrent.Size, r.torrent.Seeders, r.indexer.Title),
-			URL:   r.torrent.MagnetUri,
+			Title: fmt.Sprintf("%s\n%d|%d|%s", r.Torrent.Title, r.Torrent.Size, r.Torrent.Seeders, r.Indexer.Title),
+			URL:   r.HostURL + "/download/" + r.Torrent.InfoHash,
 		})
 
 		if len(results) == maxStreamsResult {
@@ -139,33 +200,33 @@ func (add *Addon) sourceFromContext(c *fiber.Ctx) func() ([]streamRecord, error)
 		}
 
 		return []streamRecord{{
-			contentType:   contentType,
-			id:            id,
-			season:        season,
-			episode:       episode,
-			hostURL:       c.Protocol() + "://" + c.Hostname() + "/" + c.Path(),
-			remoteAddress: c.Context().RemoteIP().String(),
+			ContentType:   contentType,
+			ID:            id,
+			Season:        season,
+			Episode:       episode,
+			HostURL:       c.Protocol() + "://" + c.Hostname() + c.Path(),
+			RemoteAddress: c.Context().RemoteIP().String(),
 		}}, nil
 	}
 }
 
 func (add *Addon) fetchMetaInfo(r streamRecord) (streamRecord, error) {
-	switch r.contentType {
+	switch r.ContentType {
 	case ContentTypeMovie:
-		resp, err := add.cinemetaClient.GetMovieById(r.id)
+		resp, err := add.cinemetaClient.GetMovieById(r.ID)
 		if err != nil {
 			return r, err
 		}
 
-		r.metaInfo = resp
+		r.MetaInfo = resp
 		return r, nil
 	case ContentTypeSeries:
-		resp, err := add.cinemetaClient.GetSeriesById(r.id)
+		resp, err := add.cinemetaClient.GetSeriesById(r.ID)
 		if err != nil {
 			return r, err
 		}
 
-		r.metaInfo = resp
+		r.MetaInfo = resp
 		return r, nil
 	default:
 		return r, errors.New("not supported content type")
@@ -181,7 +242,7 @@ func (add *Addon) fanOutToAllIndexers(r streamRecord) ([]streamRecord, error) {
 	records := make([]streamRecord, 0, len(allIndexers))
 	for _, indexer := range allIndexers {
 		r := r
-		r.indexer = indexer
+		r.Indexer = indexer
 		records = append(records, r)
 	}
 
@@ -191,20 +252,20 @@ func (add *Addon) fanOutToAllIndexers(r streamRecord) ([]streamRecord, error) {
 func (add *Addon) searchForTorrents(r streamRecord) ([]streamRecord, error) {
 	torrents := []jackett.Torrent{}
 	var err error
-	switch r.contentType {
+	switch r.ContentType {
 	case ContentTypeMovie:
-		torrents, err = add.jackettClient.SearchMovieTorrents(r.indexer, r.metaInfo.Name)
+		torrents, err = add.jackettClient.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
 	}
 
 	if err != nil {
-		log.Errorf("Failed to load torrents for %s in %s, due to: %v", r.metaInfo.Name, r.indexer.ID, err)
+		log.Errorf("Failed to load torrents for %s in %s, due to: %v", r.MetaInfo.Name, r.Indexer.ID, err)
 		return []streamRecord{}, nil
 	}
 
 	records := make([]streamRecord, 0, len(torrents))
 	for _, torrent := range torrents {
 		newRecord := r
-		newRecord.torrent = torrent
+		newRecord.Torrent = torrent
 		records = append(records, newRecord)
 	}
 	return records, nil
@@ -212,13 +273,9 @@ func (add *Addon) searchForTorrents(r streamRecord) ([]streamRecord, error) {
 
 func (add *Addon) enrichInfoHash(r streamRecord) ([]streamRecord, error) {
 	var err error
-	if r.torrent.InfoHash != "" {
-		return []streamRecord{r}, nil
-	}
-
-	r.torrent, err = add.jackettClient.FetchMagnetURI(r.torrent)
+	r.Torrent, err = add.jackettClient.FetchMagnetURI(r.Torrent)
 	if err != nil {
-		log.Errorf("Failed to fetch magnetUri for %s due to: %v", r.torrent.Guid, err)
+		log.Errorf("Failed to fetch magnetUri for %s due to: %v", r.Torrent.Guid, err)
 		return []streamRecord{}, nil
 	}
 

@@ -30,6 +30,7 @@ services:
     environment:
       - JACKETT_URL=${JACKETT_URL}
       - JACKETT_API_KEY=${JACKETT_API_KEY}
+      - REAL_DEBRID_API_TOKEN=${REAL_DEBRID_API_TOKEN}
     ports:
       - 7000:7000
     depends_on:
