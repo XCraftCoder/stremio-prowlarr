@@ -92,7 +92,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p.Map(add.fetchMetaInfo)
 	p.FanOut(add.fanOutToAllIndexers)
 	p.FanOut(add.searchForTorrents)
-	p.FanOut(add.enrichMagnetUri)
+	p.FanOut(add.enrichInfoHash)
 
 	results := make([]StreamItem, 0, maxStreamsResult)
 	err := p.Sink(func(r streamRecord) error {
@@ -210,17 +210,17 @@ func (add *Addon) searchForTorrents(r streamRecord) ([]streamRecord, error) {
 	return records, nil
 }
 
-func (add *Addon) enrichMagnetUri(r streamRecord) ([]streamRecord, error) {
-	if r.torrent.MagnetUri != "" {
+func (add *Addon) enrichInfoHash(r streamRecord) ([]streamRecord, error) {
+	var err error
+	if r.torrent.InfoHash != "" {
 		return []streamRecord{r}, nil
 	}
 
-	magnetUri, err := add.jackettClient.FetchMagnetURI(r.torrent)
+	r.torrent, err = add.jackettClient.FetchMagnetURI(r.torrent)
 	if err != nil {
 		log.Errorf("Failed to fetch magnetUri for %s due to: %v", r.torrent.Guid, err)
 		return []streamRecord{}, nil
 	}
 
-	r.torrent.MagnetUri = magnetUri
 	return []streamRecord{r}, nil
 }

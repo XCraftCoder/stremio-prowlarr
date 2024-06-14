@@ -1,9 +1,11 @@
 package jackett
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/go-resty/resty/v2"
+	"github.com/gofiber/fiber/v2/log"
 )
 
 const (
@@ -20,7 +22,7 @@ func New(apiURL string, apiKey string) *Jackett {
 	client := resty.New().
 		SetBaseURL(apiURL).
 		SetQueryParam("apikey", apiKey).
-		SetRedirectPolicy(NoRedirectForMagnet())
+		SetRedirectPolicy(NotFollowMagnet())
 
 	return &Jackett{
 		client: client,
@@ -65,15 +67,33 @@ func (j *Jackett) SearchMovieTorrents(indexer Indexer, name string) ([]Torrent, 
 	return result.Torrents, nil
 }
 
-func (j *Jackett) FetchMagnetURI(torrent Torrent) (string, error) {
-	if torrent.MagnetUri != "" {
-		return torrent.MagnetUri, nil
+func (j *Jackett) FetchMagnetURI(torrent Torrent) (Torrent, error) {
+	if torrent.MagnetUri == "" {
+		resp, err := j.client.R().Get(torrent.Link)
+		if err != nil {
+			log.Errorf("Failed to fetch magnet link for %s due to: %v", torrent.Link, err)
+			return torrent, err
+		}
+
+		if resp.Header().Get("Content-Type") == "application/x-bittorrent" {
+			return torrent, errors.New("reading Torrent files is not supported")
+		}
+
+		torrent.MagnetUri = resp.Header().Get("location")
+
+		if torrent.MagnetUri == "" {
+			log.Errorf("Unexpected magnet uri for %s", torrent.Guid)
+			return torrent, errors.New("magnet uri is expected but not found")
+		}
 	}
 
-	resp, err := j.client.R().Get(torrent.Link)
-	if err != nil {
-		return "", err
+	if torrent.InfoHash == "" {
+		infoHash, err := parseMagnetUri(torrent.MagnetUri)
+		if err != nil {
+			return torrent, err
+		}
+		torrent.InfoHash = infoHash
 	}
 
-	return resp.Header().Get("location"), nil
+	return torrent, nil
 }
