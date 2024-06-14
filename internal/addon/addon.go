@@ -52,6 +52,7 @@ type streamRecord struct {
 	MetaInfo      *model.MetaInfo
 	Indexer       jackett.Indexer
 	Torrent       jackett.Torrent
+	Files         []realdebrid.File
 }
 
 const (
@@ -105,6 +106,12 @@ func (add *Addon) HandleGetManifest(c *fiber.Ctx) error {
 func (add *Addon) HandleDownload(c *fiber.Ctx) error {
 	infoHash := strings.ToLower(c.Params("infoHash"))
 	download, err := add.realDebrid.GetDownloadByInfoHash(infoHash)
+
+	if err != nil && err != realdebrid.ErrNoTorrentFound {
+		log.Errorf("Couldn't find download link from the given hash %s: %v", infoHash, err)
+		return err
+	}
+
 	if err == realdebrid.ErrNoTorrentFound {
 		val, err := add.cache.Get([]byte(infoHash))
 		if err != nil {
@@ -126,11 +133,6 @@ func (add *Addon) HandleDownload(c *fiber.Ctx) error {
 		}
 	}
 
-	if err != nil {
-		log.Errorf("Couldn't find download link from the given hash %s: %v", infoHash, err)
-		return err
-	}
-
 	return c.Redirect(download)
 }
 
@@ -141,6 +143,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p.FanOut(add.fanOutToAllIndexers)
 	p.FanOut(add.searchForTorrents)
 	p.FanOut(add.enrichInfoHash)
+	p.MapInBatch(add.filterByCached, pipe.WorkerSize[streamRecord](5))
 
 	results := make([]StreamItem, 0, maxStreamsResult)
 	err := p.Sink(func(r streamRecord) error {
@@ -280,4 +283,35 @@ func (add *Addon) enrichInfoHash(r streamRecord) ([]streamRecord, error) {
 	}
 
 	return []streamRecord{r}, nil
+}
+
+func (add *Addon) filterByCached(records []streamRecord) ([]streamRecord, error) {
+	log.Infof("Processing batch: %d", len(records))
+
+	infoHashs := make([]string, 0, len(records))
+	for _, record := range records {
+		if record.Torrent.InfoHash == "" {
+			continue
+		}
+
+		infoHashs = append(infoHashs, record.Torrent.InfoHash)
+	}
+
+	filesByHash, err := add.realDebrid.GetFiles(infoHashs)
+	if err != nil {
+		log.Errorf("Failed to fetch files from debrid: %v", err)
+		return []streamRecord{}, nil
+	}
+
+	cachedRecords := make([]streamRecord, 0, len(records))
+	for _, r := range records {
+		if files, ok := filesByHash[r.Torrent.InfoHash]; ok {
+			newR := r
+			newR.Files = files
+			cachedRecords = append(cachedRecords, newR)
+		}
+	}
+
+	log.Infof("Found %d cached records", len(cachedRecords))
+	return cachedRecords, nil
 }

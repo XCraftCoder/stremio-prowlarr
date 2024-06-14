@@ -1,6 +1,7 @@
 package realdebrid
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -28,38 +29,54 @@ type AddMagnetResponse struct {
 	URI string `json:"uri"`
 }
 
+type safeCatchedTorrentResponse map[string][]map[string]File
+
+func (c *safeCatchedTorrentResponse) UnmarshalJSON(data []byte) error {
+	mapStruct := map[string][]map[string]File(*c)
+	_ = json.Unmarshal(data, &mapStruct)
+	*c = mapStruct
+	return nil
+}
+
 func New(apiToken string) *RealDebrid {
 	client := resty.New().
 		SetBaseURL("https://api.real-debrid.com/rest/1.0").
 		SetHeader("Accept", "application/json").
 		SetAuthScheme("Bearer").
-		SetAuthToken(apiToken)
+		SetAuthToken(apiToken).
+		SetDebug(true)
 
 	return &RealDebrid{
 		client: client,
 	}
 }
 
-func (rd *RealDebrid) GetFiles(infoHash string) ([]File, error) {
-	infoHash = strings.ToLower(infoHash)
-	result := map[string]map[string][]map[string]File{}
+func (rd *RealDebrid) GetFiles(infoHashs []string) (map[string][]File, error) {
+	result := map[string]safeCatchedTorrentResponse{}
 	_, err := rd.client.R().
 		SetResult(&result).
-		Get("/torrents/instantAvailability/" + infoHash)
+		Get("/torrents/instantAvailability/" + strings.Join(infoHashs, "/"))
 	if err != nil {
 		log.Errorf("Failed to get result from Debrid, err: %v", err)
 		return nil, err
 	}
 
-	files := []File{}
-	for _, hosterVariants := range result[infoHash] {
-		for _, variant := range hosterVariants {
-			for id, f := range variant {
-				newFile := f
-				newFile.ID = id
-				files = append(files, newFile)
+	files := map[string][]File{}
+	for infoHash, hosterFiles := range result {
+		for _, variants := range hosterFiles {
+			for _, variant := range variants {
+				if len(variant) == 0 {
+					continue
+				}
+
+				for id, f := range variant {
+					newFile := f
+					newFile.ID = id
+					files[infoHash] = append(files[infoHash], newFile)
+				}
 			}
 		}
+
 	}
 
 	return files, nil
@@ -140,29 +157,33 @@ func (rd *RealDebrid) getTorrents() ([]Torrent, error) {
 }
 
 func (rd *RealDebrid) getDownload(torrent *Torrent) (string, error) {
-	switch torrent.Status {
-	case "waiting_files_selection":
+	if torrent.Status == "waiting_files_selection" {
 		err := rd.selectAllFiles(torrent.ID)
 		if err != nil {
 			return "", err
 		}
 
-		return "", ErrTorrentNotReady
-	case "downloaded":
-		if len(torrent.Links) == 0 {
-			return "", errors.New("not supported")
-		}
-
-		download, err := rd.generateDownload(torrent.Links[0])
+		torrent, err = rd.getTorrent(torrent.ID)
 		if err != nil {
 			return "", err
 		}
+	}
 
-		return download, nil
-	default:
-		log.Infof("Torrent status is stll %s", torrent.Status)
+	if torrent.Status != "downloaded" {
+		log.Infof("Torrent status is still %s", torrent.Status)
 		return "", ErrTorrentNotReady
 	}
+
+	if len(torrent.Links) == 0 {
+		return "", errors.New("not supported")
+	}
+
+	download, err := rd.generateDownload(torrent.Links[0])
+	if err != nil {
+		return "", err
+	}
+
+	return download, nil
 }
 
 func (rd *RealDebrid) generateDownload(hosterLink string) (string, error) {

@@ -1,7 +1,5 @@
 package pipe
 
-import "sync"
-
 const (
 	defaultConcurrency = 5
 )
@@ -16,12 +14,9 @@ type Pipe[R any] struct {
 type Source[R any] func() ([]R, error)
 type Sink[R any] func(record R) error
 
-type pipeStage[R any] struct {
-	fn          func(r R) ([]R, error)
-	concurrency int
+type pipeStage[R any] interface {
+	process(inCh <-chan R, sendRecords func(records []R))
 }
-
-type StageOption[R any] func(p *pipeStage[R])
 
 func New[R any](source Source[R]) *Pipe[R] {
 	return &Pipe[R]{
@@ -31,7 +26,7 @@ func New[R any](source Source[R]) *Pipe[R] {
 	}
 }
 
-func (p *Pipe[R]) Map(fn func(r R) (R, error), opts ...StageOption[R]) {
+func (p *Pipe[R]) Map(fn func(r R) (R, error), opts ...SimpleStageOption[R]) {
 	p.FanOut(func(in R) ([]R, error) {
 		out, err := fn(in)
 		if err != nil {
@@ -42,14 +37,15 @@ func (p *Pipe[R]) Map(fn func(r R) (R, error), opts ...StageOption[R]) {
 	}, opts...)
 }
 
-func (p *Pipe[R]) FanOut(fn func(r R) ([]R, error), opts ...StageOption[R]) {
-	stage := pipeStage[R]{
+func (p *Pipe[R]) FanOut(fn func(r R) ([]R, error), opts ...SimpleStageOption[R]) {
+	stage := &simpleStage[R]{
 		fn:          fn,
 		concurrency: defaultConcurrency,
+		reportError: p.reportError,
 	}
 
 	for _, opt := range opts {
-		opt(&stage)
+		opt(stage)
 	}
 
 	p.stages = append(p.stages, stage)
@@ -74,6 +70,23 @@ func (p *Pipe[R]) Stop() {
 	}
 }
 
+func (p *Pipe[R]) MapInBatch(fn func([]R) ([]R, error), opts ...BatchStageOption[R]) {
+	stage := &batchStage[R]{
+		fn:          fn,
+		concurrency: defaultConcurrency,
+		batchSize:   defaultBatchSize,
+		reportError: p.reportError,
+		stoped:      p.stopped,
+		batchCh:     make(chan []R),
+	}
+
+	for _, opt := range opts {
+		opt(stage)
+	}
+
+	p.stages = append(p.stages, stage)
+}
+
 func (p *Pipe[R]) startSource() <-chan R {
 	outCh := make(chan R)
 
@@ -95,23 +108,9 @@ func (p *Pipe[R]) startStage(stage pipeStage[R], inCh <-chan R) <-chan R {
 	outCh := make(chan R)
 	go func() {
 		defer close(outCh)
-		wg := &sync.WaitGroup{}
-		for i := 0; i < stage.concurrency; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for r := range inCh {
-					outs, err := stage.fn(r)
-					if err != nil {
-						p.reportError(err)
-						return
-					} else {
-						p.sendRecords(outs, outCh)
-					}
-				}
-			}()
-		}
-		wg.Wait()
+		stage.process(inCh, func(records []R) {
+			p.sendRecords(records, outCh)
+		})
 	}()
 	return outCh
 }
@@ -141,7 +140,11 @@ func (p *Pipe[R]) sendRecords(records []R, outCh chan<- R) {
 	for _, record := range records {
 		select {
 		case <-p.stopped:
-		case outCh <- record:
+		default:
+			select {
+			case <-p.stopped:
+			case outCh <- record:
+			}
 		}
 	}
 }
