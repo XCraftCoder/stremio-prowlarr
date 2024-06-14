@@ -1,6 +1,7 @@
 package jackett
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 
@@ -76,10 +77,22 @@ func (j *Jackett) FetchMagnetURI(torrent Torrent) (Torrent, error) {
 		}
 
 		if resp.Header().Get("Content-Type") == "application/x-bittorrent" {
-			return torrent, errors.New("reading Torrent files is not supported")
-		}
+			torFile, err := ParseTorrentFile(bytes.NewReader(resp.Body()))
+			if err != nil {
+				log.Errorf("Invalid torrent file for %s with: %v", torrent.Link, err)
+				return torrent, err
+			}
 
-		torrent.MagnetUri = resp.Header().Get("location")
+			magnet := &Magnet{
+				Name:     torrent.Title,
+				InfoHash: torFile.Info.Hash,
+				Trackers: torFile.AnnounceList,
+			}
+			torrent.MagnetUri = magnet.String()
+			torrent.InfoHash = magnet.InfoHashStr()
+		} else {
+			torrent.MagnetUri = resp.Header().Get("location")
+		}
 
 		if torrent.MagnetUri == "" {
 			log.Errorf("Unexpected magnet uri for %s", torrent.Guid)
@@ -88,11 +101,11 @@ func (j *Jackett) FetchMagnetURI(torrent Torrent) (Torrent, error) {
 	}
 
 	if torrent.InfoHash == "" {
-		infoHash, err := parseMagnetUri(torrent.MagnetUri)
+		magnet, err := ParseMagnetUri(torrent.MagnetUri)
 		if err != nil {
 			return torrent, err
 		}
-		torrent.InfoHash = infoHash
+		torrent.InfoHash = magnet.InfoHashStr()
 	}
 
 	return torrent, nil
