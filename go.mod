@@ -4,7 +4,6 @@ go 1.22.4
 
 require (
 	github.com/caarlos0/env/v11 v11.0.1
-	github.com/go-bittorrent/magneturi v0.1.0
 	github.com/go-resty/resty/v2 v2.13.1
 	github.com/gofiber/fiber/v2 v2.52.4
 	github.com/joho/godotenv v1.5.1

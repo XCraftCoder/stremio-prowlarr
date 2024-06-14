@@ -77,7 +77,7 @@ func (j *Jackett) FetchMagnetURI(torrent Torrent) (Torrent, error) {
 		}
 
 		if resp.Header().Get("Content-Type") == "application/x-bittorrent" {
-			torFile, err := ParseTorrentFile(bytes.NewReader(resp.Body()))
+			torFile, err := parseTorrentFile(bytes.NewReader(resp.Body()))
 			if err != nil {
 				log.Errorf("Invalid torrent file for %s with: %v", torrent.Link, err)
 				return torrent, err

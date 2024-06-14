@@ -92,8 +92,8 @@ var (
 	errZeroPieces       = errors.New("torrent has zero pieces")
 )
 
-// New returns a torrent from bencoded stream.
-func ParseTorrentFile(r io.Reader) (*MetaInfo, error) {
+// Copied from https://github.com/cenkalti/rain/tree/master/internal/metainfo
+func parseTorrentFile(r io.Reader) (*MetaInfo, error) {
 	var ret MetaInfo
 	var t struct {
 		Info         bencode.RawMessage `bencode:"info"`
