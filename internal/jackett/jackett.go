@@ -1,6 +1,8 @@
 package jackett
 
 import (
+	"strings"
+
 	"github.com/go-resty/resty/v2"
 )
 
@@ -11,15 +13,18 @@ const (
 
 type Jackett struct {
 	client *resty.Client
+	apiURL string
 }
 
 func New(apiURL string, apiKey string) *Jackett {
 	client := resty.New().
 		SetBaseURL(apiURL).
-		SetQueryParam("apikey", apiKey)
+		SetQueryParam("apikey", apiKey).
+		SetRedirectPolicy(NoRedirectForMagnet())
 
 	return &Jackett{
 		client: client,
+		apiURL: apiURL,
 	}
 }
 
@@ -53,5 +58,22 @@ func (j *Jackett) SearchMovieTorrents(indexer Indexer, name string) ([]Torrent, 
 		return nil, err
 	}
 
+	for i := range result.Torrents {
+		result.Torrents[i].Link = strings.Replace(result.Torrents[i].Link, "http://localhost:9117", j.apiURL, 1)
+	}
+
 	return result.Torrents, nil
+}
+
+func (j *Jackett) FetchMagnetURI(torrent Torrent) (string, error) {
+	if torrent.MagnetUri != "" {
+		return torrent.MagnetUri, nil
+	}
+
+	resp, err := j.client.R().Get(torrent.Link)
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Header().Get("location"), nil
 }

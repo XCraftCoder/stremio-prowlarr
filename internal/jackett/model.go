@@ -24,7 +24,7 @@ type Torrent struct {
 	Languages []string `json:"Languages"`
 	Subs      []string `json:"Subs"`
 	Peers     uint     `json:"Peers"`
-	Files     string   `json:"Files"`
+	Files     uint     `json:"Files"`
 }
 
 type TorrentsResponse struct {

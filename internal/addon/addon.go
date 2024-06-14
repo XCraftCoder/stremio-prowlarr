@@ -92,6 +92,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p.Map(add.fetchMetaInfo)
 	p.FanOut(add.fanOutToAllIndexers)
 	p.FanOut(add.searchForTorrents)
+	p.FanOut(add.enrichMagnetUri)
 
 	results := make([]StreamItem, 0, maxStreamsResult)
 	err := p.Sink(func(r streamRecord) error {
@@ -103,7 +104,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 		results = append(results, StreamItem{
 			Name:  "Movie",
 			Title: fmt.Sprintf("%s|%d|%d|%s", r.torrent.Title, r.torrent.Size, r.torrent.Seeders, r.indexer.Title),
-			URL:   r.hostURL + "/download",
+			URL:   r.torrent.MagnetUri,
 		})
 
 		if len(results) == maxStreamsResult {
@@ -196,7 +197,7 @@ func (add *Addon) searchForTorrents(r streamRecord) ([]streamRecord, error) {
 	}
 
 	if err != nil {
-		log.Errorf("Failed to load torrents for %s in %s", r.metaInfo.Name, r.indexer.Title)
+		log.Errorf("Failed to load torrents for %s in %s, due to: %v", r.metaInfo.Name, r.indexer.ID, err)
 		return []streamRecord{}, nil
 	}
 
@@ -207,4 +208,19 @@ func (add *Addon) searchForTorrents(r streamRecord) ([]streamRecord, error) {
 		records = append(records, newRecord)
 	}
 	return records, nil
+}
+
+func (add *Addon) enrichMagnetUri(r streamRecord) ([]streamRecord, error) {
+	if r.torrent.MagnetUri != "" {
+		return []streamRecord{r}, nil
+	}
+
+	magnetUri, err := add.jackettClient.FetchMagnetURI(r.torrent)
+	if err != nil {
+		log.Errorf("Failed to fetch magnetUri for %s due to: %v", r.torrent.Guid, err)
+		return []streamRecord{}, nil
+	}
+
+	r.torrent.MagnetUri = magnetUri
+	return []streamRecord{r}, nil
 }

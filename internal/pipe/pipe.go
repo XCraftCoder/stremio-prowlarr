@@ -1,5 +1,7 @@
 package pipe
 
+import "sync"
+
 const (
 	defaultConcurrency = 5
 )
@@ -93,15 +95,23 @@ func (p *Pipe[R]) startStage(stage pipeStage[R], inCh <-chan R) <-chan R {
 	outCh := make(chan R)
 	go func() {
 		defer close(outCh)
-		for r := range inCh {
-			outs, err := stage.fn(r)
-			if err != nil {
-				p.reportError(err)
-				return
-			} else {
-				p.sendRecords(outs, outCh)
-			}
+		wg := &sync.WaitGroup{}
+		for i := 0; i < stage.concurrency; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for r := range inCh {
+					outs, err := stage.fn(r)
+					if err != nil {
+						p.reportError(err)
+						return
+					} else {
+						p.sendRecords(outs, outCh)
+					}
+				}
+			}()
 		}
+		wg.Wait()
 	}()
 	return outCh
 }
