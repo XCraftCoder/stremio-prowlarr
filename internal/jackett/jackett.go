@@ -1,9 +1,12 @@
 package jackett
 
 import (
-	"log"
-
 	"github.com/go-resty/resty/v2"
+)
+
+const (
+	moviesCategory = "2000"
+	tvCategory     = "5000"
 )
 
 type Jackett struct {
@@ -22,7 +25,7 @@ func New(apiURL string, apiKey string) *Jackett {
 
 func (j *Jackett) GetAllIndexers() ([]Indexer, error) {
 	result := &IndexersResponse{}
-	resp, err := j.client.
+	_, err := j.client.
 		R().
 		SetQueryParam("t", "indexers").
 		SetQueryParam("configured", "true").
@@ -33,6 +36,22 @@ func (j *Jackett) GetAllIndexers() ([]Indexer, error) {
 		return nil, err
 	}
 
-	log.Println("resp: ", resp.String(), result.Indexers)
 	return result.Indexers, nil
+}
+
+func (j *Jackett) SearchMovieTorrents(indexer Indexer, name string) ([]Torrent, error) {
+	result := &TorrentsResponse{}
+	_, err := j.client.
+		R().
+		SetQueryParam("t", "movie").
+		SetQueryParam("query", name).
+		SetQueryParam("category", moviesCategory).
+		SetResult(result).
+		Get("api/v2.0/indexers/" + indexer.ID + "/results")
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.Torrents, nil
 }

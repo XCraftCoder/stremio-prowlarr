@@ -40,6 +40,7 @@ type streamRecord struct {
 	remoteAddress string
 	metaInfo      *model.MetaInfo
 	indexer       jackett.Indexer
+	torrent       jackett.Torrent
 }
 
 const (
@@ -90,6 +91,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 
 	p.Map(add.fetchMetaInfo)
 	p.FanOut(add.fanOutToAllIndexers)
+	p.FanOut(add.searchForTorrents)
 
 	results := make([]StreamItem, 0, maxStreamsResult)
 	err := p.Sink(func(r streamRecord) error {
@@ -100,7 +102,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 
 		results = append(results, StreamItem{
 			Name:  "Movie",
-			Title: fmt.Sprintf("%s %d|%s", r.metaInfo.Name, r.metaInfo.FromYear, r.indexer.Title),
+			Title: fmt.Sprintf("%s|%d|%d|%s", r.torrent.Title, r.torrent.Size, r.torrent.Seeders, r.indexer.Title),
 			URL:   r.hostURL + "/download",
 		})
 
@@ -182,5 +184,27 @@ func (add *Addon) fanOutToAllIndexers(r streamRecord) ([]streamRecord, error) {
 		records = append(records, r)
 	}
 
+	return records, nil
+}
+
+func (add *Addon) searchForTorrents(r streamRecord) ([]streamRecord, error) {
+	torrents := []jackett.Torrent{}
+	var err error
+	switch r.contentType {
+	case ContentTypeMovie:
+		torrents, err = add.jackettClient.SearchMovieTorrents(r.indexer, r.metaInfo.Name)
+	}
+
+	if err != nil {
+		log.Errorf("Failed to load torrents for %s in %s", r.metaInfo.Name, r.indexer.Title)
+		return []streamRecord{}, nil
+	}
+
+	records := make([]streamRecord, 0, len(torrents))
+	for _, torrent := range torrents {
+		newRecord := r
+		newRecord.torrent = torrent
+		records = append(records, newRecord)
+	}
 	return records, nil
 }
