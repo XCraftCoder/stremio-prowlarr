@@ -40,11 +40,11 @@ func (c *safeCatchedTorrentResponse) UnmarshalJSON(data []byte) error {
 
 func New(apiToken string) *RealDebrid {
 	client := resty.New().
+		// SetDebug(true).
 		SetBaseURL("https://api.real-debrid.com/rest/1.0").
 		SetHeader("Accept", "application/json").
 		SetAuthScheme("Bearer").
-		SetAuthToken(apiToken).
-		SetDebug(true)
+		SetAuthToken(apiToken)
 
 	return &RealDebrid{
 		client: client,

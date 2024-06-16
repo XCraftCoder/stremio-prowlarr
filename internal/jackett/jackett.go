@@ -21,6 +21,7 @@ type Jackett struct {
 
 func New(apiURL string, apiKey string) *Jackett {
 	client := resty.New().
+		// SetDebug(true).
 		SetBaseURL(apiURL).
 		SetQueryParam("apikey", apiKey).
 		SetRedirectPolicy(NotFollowMagnet())
@@ -96,7 +97,7 @@ func (j *Jackett) FetchMagnetURI(torrent Torrent) (Torrent, error) {
 		}
 
 		if torrent.MagnetUri == "" {
-			log.Errorf("Unexpected magnet uri for %s", torrent.Guid)
+			log.Errorf("Unexpected magnet uri for %s, %s", torrent.Guid, torrent.Title)
 			return torrent, errors.New("magnet uri is expected but not found")
 		}
 	}

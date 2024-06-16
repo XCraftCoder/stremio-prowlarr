@@ -11,11 +11,11 @@ type Pipe[R any] struct {
 	errCh   chan error
 }
 
-type Source[R any] func() ([]R, error)
-type Sink[R any] func(record R) error
+type Source[R any] func() ([]*R, error)
+type Sink[R any] func(*R) error
 
 type pipeStage[R any] interface {
-	process(inCh <-chan R, sendRecords func(records []R))
+	process(inCh <-chan *R, outCh chan<- *R)
 }
 
 func New[R any](source Source[R]) *Pipe[R] {
@@ -26,22 +26,23 @@ func New[R any](source Source[R]) *Pipe[R] {
 	}
 }
 
-func (p *Pipe[R]) Map(fn func(r R) (R, error), opts ...SimpleStageOption[R]) {
-	p.FanOut(func(in R) ([]R, error) {
+func (p *Pipe[R]) Map(fn func(r *R) (*R, error), opts ...SimpleStageOption[R]) {
+	p.FanOut(func(in *R) ([]*R, error) {
 		out, err := fn(in)
 		if err != nil {
 			return nil, err
 		}
 
-		return []R{out}, nil
+		return []*R{out}, nil
 	}, opts...)
 }
 
-func (p *Pipe[R]) FanOut(fn func(r R) ([]R, error), opts ...SimpleStageOption[R]) {
+func (p *Pipe[R]) FanOut(fn func(r *R) ([]*R, error), opts ...SimpleStageOption[R]) {
 	stage := &simpleStage[R]{
 		fn:          fn,
 		concurrency: defaultConcurrency,
 		reportError: p.reportError,
+		stopped:     p.stopped,
 	}
 
 	for _, opt := range opts {
@@ -70,14 +71,14 @@ func (p *Pipe[R]) Stop() {
 	}
 }
 
-func (p *Pipe[R]) MapInBatch(fn func([]R) ([]R, error), opts ...BatchStageOption[R]) {
+func (p *Pipe[R]) Batch(fn func([]*R) ([]*R, error), opts ...BatchStageOption[R]) {
 	stage := &batchStage[R]{
 		fn:          fn,
-		concurrency: defaultConcurrency,
+		workerSize:  defaultWorkerSize,
 		batchSize:   defaultBatchSize,
 		reportError: p.reportError,
 		stoped:      p.stopped,
-		batchCh:     make(chan []R),
+		batchCh:     make(chan []*R),
 	}
 
 	for _, opt := range opts {
@@ -87,8 +88,20 @@ func (p *Pipe[R]) MapInBatch(fn func([]R) ([]R, error), opts ...BatchStageOption
 	p.stages = append(p.stages, stage)
 }
 
-func (p *Pipe[R]) startSource() <-chan R {
-	outCh := make(chan R)
+func (p *Pipe[R]) Shuffle(higher func(*R, *R) bool) {
+	stage := &shuffleStage[R]{
+		stopped: p.stopped,
+		queue: &priorityQueue[R]{
+			data:   make([]*R, 0, defaultShuffleSize),
+			higher: higher,
+		},
+	}
+
+	p.stages = append(p.stages, stage)
+}
+
+func (p *Pipe[R]) startSource() <-chan *R {
+	outCh := make(chan *R)
 
 	go func() {
 		defer close(outCh)
@@ -98,24 +111,22 @@ func (p *Pipe[R]) startSource() <-chan R {
 			return
 		}
 
-		p.sendRecords(records, outCh)
+		sendRecords(records, outCh, p.stopped)
 	}()
 
 	return outCh
 }
 
-func (p *Pipe[R]) startStage(stage pipeStage[R], inCh <-chan R) <-chan R {
-	outCh := make(chan R)
+func (p *Pipe[R]) startStage(stage pipeStage[R], inCh <-chan *R) <-chan *R {
+	outCh := make(chan *R)
 	go func() {
 		defer close(outCh)
-		stage.process(inCh, func(records []R) {
-			p.sendRecords(records, outCh)
-		})
+		stage.process(inCh, outCh)
 	}()
 	return outCh
 }
 
-func (p *Pipe[R]) startSink(sink Sink[R], inCh <-chan R) {
+func (p *Pipe[R]) startSink(sink Sink[R], inCh <-chan *R) {
 	go func() {
 		for record := range inCh {
 			err := sink(record)
@@ -133,18 +144,5 @@ func (p *Pipe[R]) reportError(err error) {
 	case p.errCh <- err:
 		p.Stop()
 	default:
-	}
-}
-
-func (p *Pipe[R]) sendRecords(records []R, outCh chan<- R) {
-	for _, record := range records {
-		select {
-		case <-p.stopped:
-		default:
-			select {
-			case <-p.stopped:
-			case outCh <- record:
-			}
-		}
 	}
 }

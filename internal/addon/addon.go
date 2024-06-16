@@ -142,11 +142,148 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p.Map(add.fetchMetaInfo)
 	p.FanOut(add.fanOutToAllIndexers)
 	p.FanOut(add.searchForTorrents)
+	p.Shuffle(hasMoreSeeders)
 	p.FanOut(add.enrichInfoHash)
-	p.MapInBatch(add.filterByCached, pipe.WorkerSize[streamRecord](5))
+	p.Batch(add.filterByCached)
 
+	return c.JSON(GetStreamsResponse{
+		Streams: add.sinkResults(p),
+	})
+}
+
+func (add *Addon) sourceFromContext(c *fiber.Ctx) func() ([]*streamRecord, error) {
+	return func() ([]*streamRecord, error) {
+		id := c.Params("id")
+		season := 0
+		episode := 0
+		contentType := ContentType(c.Params("type"))
+		if contentType == ContentTypeSeries {
+			tokens := strings.Split(id, "%3A")
+			if len(tokens) != 3 {
+				return nil, errors.New("invalid stream id")
+			}
+			id = tokens[0]
+			season, _ = strconv.Atoi(tokens[1])
+			episode, _ = strconv.Atoi(tokens[2])
+		}
+
+		return []*streamRecord{{
+			ContentType:   contentType,
+			ID:            id,
+			Season:        season,
+			Episode:       episode,
+			HostURL:       c.Protocol() + "://" + c.Hostname() + c.Path(),
+			RemoteAddress: c.Context().RemoteIP().String(),
+		}}, nil
+	}
+}
+
+func (add *Addon) fetchMetaInfo(r *streamRecord) (*streamRecord, error) {
+	switch r.ContentType {
+	case ContentTypeMovie:
+		resp, err := add.cinemetaClient.GetMovieById(r.ID)
+		if err != nil {
+			return r, err
+		}
+
+		r.MetaInfo = resp
+		return r, nil
+	case ContentTypeSeries:
+		resp, err := add.cinemetaClient.GetSeriesById(r.ID)
+		if err != nil {
+			return r, err
+		}
+
+		r.MetaInfo = resp
+		return r, nil
+	default:
+		return r, errors.New("not supported content type")
+	}
+}
+
+func (add *Addon) fanOutToAllIndexers(r *streamRecord) ([]*streamRecord, error) {
+	allIndexers, err := add.jackettClient.GetAllIndexers()
+	if err != nil {
+		return nil, fmt.Errorf("couldn't load all indexers: %v", err)
+	}
+
+	records := make([]*streamRecord, 0, len(allIndexers))
+	for _, indexer := range allIndexers {
+		newR := *r
+		newR.Indexer = indexer
+		records = append(records, &newR)
+	}
+
+	return records, nil
+}
+
+func (add *Addon) searchForTorrents(r *streamRecord) ([]*streamRecord, error) {
+	torrents := []jackett.Torrent{}
+	var err error
+	switch r.ContentType {
+	case ContentTypeMovie:
+		torrents, err = add.jackettClient.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
+	}
+
+	if err != nil {
+		log.Errorf("Failed to load torrents for %s in %s, due to: %v", r.MetaInfo.Name, r.Indexer.ID, err)
+		return nil, nil
+	}
+
+	records := make([]*streamRecord, 0, len(torrents))
+	for _, torrent := range torrents {
+		newRecord := *r
+		newRecord.Torrent = torrent
+		records = append(records, &newRecord)
+	}
+
+	log.Infof("Found %d from %s", len(records), r.Indexer.ID)
+	return records, nil
+}
+
+func (add *Addon) enrichInfoHash(r *streamRecord) ([]*streamRecord, error) {
+	var err error
+	r.Torrent, err = add.jackettClient.FetchMagnetURI(r.Torrent)
+	if err != nil {
+		log.Errorf("Failed to fetch magnetUri for %s due to: %v", r.Torrent.Guid, err)
+		return nil, nil
+	}
+
+	return []*streamRecord{r}, nil
+}
+
+func (add *Addon) filterByCached(records []*streamRecord) ([]*streamRecord, error) {
+	infoHashs := make([]string, 0, len(records))
+	for _, record := range records {
+		if record.Torrent.InfoHash == "" {
+			continue
+		}
+
+		infoHashs = append(infoHashs, record.Torrent.InfoHash)
+	}
+
+	filesByHash, err := add.realDebrid.GetFiles(infoHashs)
+	if err != nil {
+		log.Errorf("Failed to fetch files from debrid: %v", err)
+		return nil, nil
+	}
+
+	cachedRecords := make([]*streamRecord, 0, len(records))
+	for _, r := range records {
+		if files, ok := filesByHash[r.Torrent.InfoHash]; ok {
+			newR := *r
+			newR.Files = files
+			cachedRecords = append(cachedRecords, &newR)
+		}
+	}
+
+	log.Infof("Found %d cached from %d records", len(cachedRecords), len(records))
+	return cachedRecords, nil
+}
+
+func (add *Addon) sinkResults(p *pipe.Pipe[streamRecord]) []StreamItem {
 	results := make([]StreamItem, 0, maxStreamsResult)
-	err := p.Sink(func(r streamRecord) error {
+	err := p.Sink(func(r *streamRecord) error {
 		if len(results) == maxStreamsResult {
 			log.Info("Enough results have been collected.")
 			return nil
@@ -181,137 +318,17 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 		log.Errorf("Error while processing: %v", err)
 	}
 
-	return c.JSON(GetStreamsResponse{
-		Streams: results,
-	})
+	return results
 }
 
-func (add *Addon) sourceFromContext(c *fiber.Ctx) func() ([]streamRecord, error) {
-	return func() ([]streamRecord, error) {
-		id := c.Params("id")
-		season := 0
-		episode := 0
-		contentType := ContentType(c.Params("type"))
-		if contentType == ContentTypeSeries {
-			tokens := strings.Split(id, "%3A")
-			if len(tokens) != 3 {
-				return nil, errors.New("invalid stream id")
-			}
-			id = tokens[0]
-			season, _ = strconv.Atoi(tokens[1])
-			episode, _ = strconv.Atoi(tokens[2])
-		}
-
-		return []streamRecord{{
-			ContentType:   contentType,
-			ID:            id,
-			Season:        season,
-			Episode:       episode,
-			HostURL:       c.Protocol() + "://" + c.Hostname() + c.Path(),
-			RemoteAddress: c.Context().RemoteIP().String(),
-		}}, nil
-	}
-}
-
-func (add *Addon) fetchMetaInfo(r streamRecord) (streamRecord, error) {
-	switch r.ContentType {
-	case ContentTypeMovie:
-		resp, err := add.cinemetaClient.GetMovieById(r.ID)
-		if err != nil {
-			return r, err
-		}
-
-		r.MetaInfo = resp
-		return r, nil
-	case ContentTypeSeries:
-		resp, err := add.cinemetaClient.GetSeriesById(r.ID)
-		if err != nil {
-			return r, err
-		}
-
-		r.MetaInfo = resp
-		return r, nil
-	default:
-		return r, errors.New("not supported content type")
-	}
-}
-
-func (add *Addon) fanOutToAllIndexers(r streamRecord) ([]streamRecord, error) {
-	allIndexers, err := add.jackettClient.GetAllIndexers()
-	if err != nil {
-		return nil, fmt.Errorf("couldn't load all indexers: %v", err)
+func hasMoreSeeders(r1, r2 *streamRecord) bool {
+	if r1.Torrent.MagnetUri != "" && r2.Torrent.MagnetUri == "" {
+		return true
 	}
 
-	records := make([]streamRecord, 0, len(allIndexers))
-	for _, indexer := range allIndexers {
-		r := r
-		r.Indexer = indexer
-		records = append(records, r)
+	if r1.Torrent.MagnetUri == "" && r2.Torrent.MagnetUri != "" {
+		return false
 	}
 
-	return records, nil
-}
-
-func (add *Addon) searchForTorrents(r streamRecord) ([]streamRecord, error) {
-	torrents := []jackett.Torrent{}
-	var err error
-	switch r.ContentType {
-	case ContentTypeMovie:
-		torrents, err = add.jackettClient.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
-	}
-
-	if err != nil {
-		log.Errorf("Failed to load torrents for %s in %s, due to: %v", r.MetaInfo.Name, r.Indexer.ID, err)
-		return []streamRecord{}, nil
-	}
-
-	records := make([]streamRecord, 0, len(torrents))
-	for _, torrent := range torrents {
-		newRecord := r
-		newRecord.Torrent = torrent
-		records = append(records, newRecord)
-	}
-	return records, nil
-}
-
-func (add *Addon) enrichInfoHash(r streamRecord) ([]streamRecord, error) {
-	var err error
-	r.Torrent, err = add.jackettClient.FetchMagnetURI(r.Torrent)
-	if err != nil {
-		log.Errorf("Failed to fetch magnetUri for %s due to: %v", r.Torrent.Guid, err)
-		return []streamRecord{}, nil
-	}
-
-	return []streamRecord{r}, nil
-}
-
-func (add *Addon) filterByCached(records []streamRecord) ([]streamRecord, error) {
-	log.Infof("Processing batch: %d", len(records))
-
-	infoHashs := make([]string, 0, len(records))
-	for _, record := range records {
-		if record.Torrent.InfoHash == "" {
-			continue
-		}
-
-		infoHashs = append(infoHashs, record.Torrent.InfoHash)
-	}
-
-	filesByHash, err := add.realDebrid.GetFiles(infoHashs)
-	if err != nil {
-		log.Errorf("Failed to fetch files from debrid: %v", err)
-		return []streamRecord{}, nil
-	}
-
-	cachedRecords := make([]streamRecord, 0, len(records))
-	for _, r := range records {
-		if files, ok := filesByHash[r.Torrent.InfoHash]; ok {
-			newR := r
-			newR.Files = files
-			cachedRecords = append(cachedRecords, newR)
-		}
-	}
-
-	log.Infof("Found %d cached records", len(cachedRecords))
-	return cachedRecords, nil
+	return r1.Torrent.Seeders > r2.Torrent.Seeders
 }

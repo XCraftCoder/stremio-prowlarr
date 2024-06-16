@@ -3,29 +3,30 @@ package pipe
 import "sync"
 
 const (
-	defaultBatchSize = 10
+	defaultBatchSize  = 10
+	defaultWorkerSize = 5
 )
 
 type batchStage[R any] struct {
-	fn          func(r []R) ([]R, error)
-	concurrency int
+	fn          func(r []*R) ([]*R, error)
+	workerSize  int
 	batchSize   int
 	reportError func(err error)
 	stoped      <-chan struct{}
-	batchCh     chan []R
+	batchCh     chan []*R
 }
 
 type BatchStageOption[R any] func(p *batchStage[R])
 
 func WorkerSize[R any](workerSize int) BatchStageOption[R] {
 	return func(p *batchStage[R]) {
-		p.concurrency = workerSize
+		p.workerSize = workerSize
 	}
 }
 
-func (s *batchStage[R]) process(inCh <-chan R, sendRecords func(records []R)) {
+func (s *batchStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 	wg := &sync.WaitGroup{}
-	for i := 0; i < s.concurrency; i++ {
+	for i := 0; i < s.workerSize; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -35,7 +36,7 @@ func (s *batchStage[R]) process(inCh <-chan R, sendRecords func(records []R)) {
 					s.reportError(err)
 					return
 				} else {
-					sendRecords(outs)
+					sendRecords(outs, outCh, s.stoped)
 				}
 			}
 		}()
@@ -47,15 +48,21 @@ func (s *batchStage[R]) process(inCh <-chan R, sendRecords func(records []R)) {
 	wg.Wait()
 }
 
-func (s *batchStage[R]) batchRecords(wg *sync.WaitGroup, inCh <-chan R) {
+func (s *batchStage[R]) batchRecords(wg *sync.WaitGroup, inCh <-chan *R) {
 	defer wg.Done()
+	defer close(s.batchCh)
 	for {
 		select {
 		case <-s.stoped:
 			return
 		default:
 			select {
-			case record := <-inCh:
+			case record, ok := <-inCh:
+				if !ok {
+					// inCh is closed
+					return
+				}
+
 				s.processNextBatch(record, inCh)
 			case <-s.stoped:
 				return
@@ -64,8 +71,8 @@ func (s *batchStage[R]) batchRecords(wg *sync.WaitGroup, inCh <-chan R) {
 	}
 }
 
-func (s *batchStage[R]) processNextBatch(r R, inCh <-chan R) {
-	newBatch := make([]R, 0, s.batchSize)
+func (s *batchStage[R]) processNextBatch(r *R, inCh <-chan *R) {
+	newBatch := make([]*R, 0, s.batchSize)
 	newBatch = append(newBatch, r)
 	for {
 		if len(newBatch) == s.batchSize {
@@ -82,11 +89,21 @@ func (s *batchStage[R]) processNextBatch(r R, inCh <-chan R) {
 		}
 
 		select {
-		case record := <-inCh:
+		case record, ok := <-inCh:
+			if !ok {
+				// inCh is closed
+				return
+			}
+
 			newBatch = append(newBatch, record)
 		default:
 			select {
-			case record := <-inCh:
+			case record, ok := <-inCh:
+				if !ok {
+					// inCh is closed
+					return
+				}
+
 				newBatch = append(newBatch, record)
 			case s.batchCh <- newBatch:
 				return
