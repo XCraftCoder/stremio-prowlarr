@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/bongnv/jackett-stremio/internal/jackett"
 	"github.com/bongnv/jackett-stremio/internal/model"
 	"github.com/bongnv/jackett-stremio/internal/pipe"
+	"github.com/bongnv/jackett-stremio/internal/titleparser"
 	"github.com/coocood/freecache"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/log"
@@ -50,6 +52,7 @@ type streamRecord struct {
 	HostURL       string
 	RemoteAddress string
 	MetaInfo      *model.MetaInfo
+	TitleInfo     *titleparser.MetaInfo
 	Indexer       jackett.Indexer
 	Torrent       jackett.Torrent
 	Files         []realdebrid.File
@@ -142,12 +145,24 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p.Map(add.fetchMetaInfo)
 	p.FanOut(add.fanOutToAllIndexers)
 	p.FanOut(add.searchForTorrents)
+	p.Map(add.parseTorrentTitle)
 	p.Shuffle(hasMoreSeeders)
 	p.FanOut(add.enrichInfoHash)
 	p.Batch(add.filterByCached)
+	p.Shuffle(hasHigherQuality)
+
+	records := add.sinkResults(p)
+	results := make([]StreamItem, 0, len(records))
+	for _, r := range records {
+		results = append(results, StreamItem{
+			Name:  fmt.Sprintf("[%dp]", r.TitleInfo.Resolution),
+			Title: fmt.Sprintf("%s\n%d|%d|%s", r.Torrent.Title, r.Torrent.Size, r.Torrent.Seeders, r.Indexer.Title),
+			URL:   r.HostURL + "/download/" + r.Torrent.InfoHash,
+		})
+	}
 
 	return c.JSON(GetStreamsResponse{
-		Streams: add.sinkResults(p),
+		Streams: results,
 	})
 }
 
@@ -281,10 +296,10 @@ func (add *Addon) filterByCached(records []*streamRecord) ([]*streamRecord, erro
 	return cachedRecords, nil
 }
 
-func (add *Addon) sinkResults(p *pipe.Pipe[streamRecord]) []StreamItem {
-	results := make([]StreamItem, 0, maxStreamsResult)
+func (add *Addon) sinkResults(p *pipe.Pipe[streamRecord]) []*streamRecord {
+	records := make([]*streamRecord, 0, maxStreamsResult)
 	err := p.Sink(func(r *streamRecord) error {
-		if len(results) == maxStreamsResult {
+		if len(records) == maxStreamsResult {
 			log.Info("Enough results have been collected.")
 			return nil
 		}
@@ -301,14 +316,9 @@ func (add *Addon) sinkResults(p *pipe.Pipe[streamRecord]) []StreamItem {
 			log.Errorf("Failed to cache the record: %s, %v", r.Torrent.InfoHash, err)
 			return nil
 		}
+		records = append(records, r)
 
-		results = append(results, StreamItem{
-			Name:  "Movie",
-			Title: fmt.Sprintf("%s\n%d|%d|%s", r.Torrent.Title, r.Torrent.Size, r.Torrent.Seeders, r.Indexer.Title),
-			URL:   r.HostURL + "/download/" + r.Torrent.InfoHash,
-		})
-
-		if len(results) == maxStreamsResult {
+		if len(records) == maxStreamsResult {
 			p.Stop()
 		}
 		return nil
@@ -318,7 +328,13 @@ func (add *Addon) sinkResults(p *pipe.Pipe[streamRecord]) []StreamItem {
 		log.Errorf("Error while processing: %v", err)
 	}
 
-	return results
+	slices.SortFunc(records, cmpLowerQuality)
+	return records
+}
+
+func (add *Addon) parseTorrentTitle(r *streamRecord) (*streamRecord, error) {
+	r.TitleInfo = titleparser.Parse(r.Torrent.Title)
+	return r, nil
 }
 
 func hasMoreSeeders(r1, r2 *streamRecord) bool {
@@ -331,4 +347,28 @@ func hasMoreSeeders(r1, r2 *streamRecord) bool {
 	}
 
 	return r1.Torrent.Seeders > r2.Torrent.Seeders
+}
+
+func hasHigherQuality(r1, r2 *streamRecord) bool {
+	return cmpLowerQuality(r1, r2) != 1
+}
+
+func cmpLowerQuality(r1, r2 *streamRecord) int {
+	if r1.TitleInfo.Resolution > r2.TitleInfo.Resolution {
+		return -1
+	}
+
+	if r1.TitleInfo.Resolution < r2.TitleInfo.Resolution {
+		return 1
+	}
+
+	if r1.Torrent.Size > r2.Torrent.Size {
+		return -1
+	}
+
+	if r1.Torrent.Size < r2.Torrent.Size {
+		return 1
+	}
+
+	return 0
 }
