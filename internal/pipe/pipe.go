@@ -100,6 +100,17 @@ func (p *Pipe[R]) Shuffle(higher func(*R, *R) bool) {
 	p.stages = append(p.stages, stage)
 }
 
+func (p *Pipe[R]) Filter(fn func(r *R) bool, opts ...SimpleStageOption[R]) {
+	p.FanOut(func(in *R) ([]*R, error) {
+		ok := fn(in)
+		if ok {
+			return []*R{in}, nil
+		}
+
+		return nil, nil
+	}, opts...)
+}
+
 func (p *Pipe[R]) startSource() <-chan *R {
 	outCh := make(chan *R)
 

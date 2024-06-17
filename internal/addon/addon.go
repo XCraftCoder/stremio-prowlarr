@@ -25,6 +25,21 @@ const (
 	streamRecordExpiry = 10 * 60          // 10m
 )
 
+var (
+	remuxSources = []string{
+		"bdremux",
+		"brremux",
+		"webremux",
+		"dlremux",
+	}
+
+	camSources = []string{
+		"telesync",
+		"cam",
+		"hdcam",
+	}
+)
+
 // Addon implements a Stremio addon
 type Addon struct {
 	id          string
@@ -146,6 +161,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p.FanOut(add.fanOutToAllIndexers)
 	p.FanOut(add.searchForTorrents)
 	p.Map(add.parseTorrentTitle)
+	p.Filter(excludeTorrents)
 	p.Shuffle(hasMoreSeeders)
 	p.FanOut(add.enrichInfoHash)
 	p.Batch(add.filterByCached)
@@ -335,6 +351,10 @@ func (add *Addon) sinkResults(p *pipe.Pipe[streamRecord]) []*streamRecord {
 func (add *Addon) parseTorrentTitle(r *streamRecord) (*streamRecord, error) {
 	r.TitleInfo = titleparser.Parse(r.Torrent.Title)
 	return r, nil
+}
+
+func excludeTorrents(r *streamRecord) bool {
+	return !slices.Contains(remuxSources, r.TitleInfo.Source) && !slices.Contains(camSources, r.TitleInfo.Source) && !r.TitleInfo.ThreeD
 }
 
 func hasMoreSeeders(r1, r2 *streamRecord) bool {

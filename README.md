@@ -7,4 +7,6 @@ A StremIO addon for Jackett
 - [ ] Support uncached torrents
 - [ ] Cache redirect/download link?
 - [ ] Consider buffering for better batching & shuffling
-- [ ] Support exclusions (Remux, CAM) ...
+- [x] Support exclusions (Remux, CAM) ...
+- [ ] Check if it matches IMDB
+- [ ] Only download necessary files

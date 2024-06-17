@@ -27,7 +27,7 @@ var (
 		parseSource(`(?i)\bBluray\b`),
 		parseSource(`(?i)\bWEB-?DL\b`),
 		parseSource(`(?i)\bWEB-?Rip\b`),
-		parseSource(`(?i)\b(?:DL|WEB|BD|BR)MUX\b`),
+		parseSource(`(?i)\b(?:DL|WEB|BD|BR)REMUX\b`),
 		parseSource(`(?i)\b(DivX|XviD)\b`),
 		parseSource(`(?i)HDTV`),
 		parseCodec(`(?i)dvix|mpeg2|divx|xvid|[xh][-. ]?26[45]|avc|hevc`),
@@ -37,6 +37,7 @@ var (
 		matchAndSetAudio(`(?i)DD5[. ]?1`, "dd5.1"),
 		matchAndSetAudio(`(?i)AAC(?:[. ]?2[. ]0)?`, "aac"),
 		parseContainer(`(?i)\b(MKV|AVI|MP4)\b`),
+		parse3D(`(?i)\b((3D))\b`),
 	}
 )
 
@@ -47,6 +48,7 @@ type MetaInfo struct {
 	Codec      string
 	Audio      string
 	Container  string
+	ThreeD     bool
 }
 
 func Parse(title string) *MetaInfo {
@@ -157,5 +159,16 @@ func parseContainer(pattern string) func(string, *MetaInfo) {
 	compiled := regexp.MustCompile(pattern)
 	return func(title string, mi *MetaInfo) {
 		findValue(&mi.Container, title, compiled)
+	}
+}
+
+func parse3D(pattern string) func(string, *MetaInfo) {
+	compiled := regexp.MustCompile(pattern)
+	return func(title string, mi *MetaInfo) {
+		if mi.ThreeD {
+			return
+		}
+
+		mi.ThreeD = compiled.MatchString(title)
 	}
 }
