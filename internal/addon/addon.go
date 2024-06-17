@@ -449,11 +449,10 @@ func excludeTorrents(r *streamRecord) bool {
 		!slices.Contains(camSources, r.TitleInfo.Quality) && !r.TitleInfo.ThreeD
 	imdbOK := (r.Torrent.Imdb == 0 || r.Torrent.Imdb == r.MetaInfo.IMDBID)
 	yearOK := (r.TitleInfo.Year == 0 || (r.MetaInfo.FromYear <= r.TitleInfo.Year && r.MetaInfo.ToYear >= r.TitleInfo.Year))
-	result := qualityOK &&
-		imdbOK &&
-		yearOK
+	episodeOK := r.ContentType != ContentTypeSeries || (r.TitleInfo.Episode == 0 || r.TitleInfo.Episode == r.Episode)
+	result := qualityOK && imdbOK && yearOK && episodeOK
 	if !result {
-		log.Infof("Excluded %s, quality: %v, imdb: %d, %v, year: %v", r.Torrent.Title, qualityOK, r.Torrent.Imdb, imdbOK, yearOK)
+		log.Infof("Excluded %s, quality: %v, imdb: %d, %v, year: %v, episode: %v", r.Torrent.Title, qualityOK, r.Torrent.Imdb, imdbOK, yearOK, episodeOK)
 	}
 	return result
 }

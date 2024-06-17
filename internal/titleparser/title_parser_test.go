@@ -16,4 +16,8 @@ func TestParse(t *testing.T) {
 
 	metaInfo = titleparser.Parse("Cloud Atlas 2012 1080p USA Blu-ray Remux AVC DTS-HD MA 5.1 -KRa")
 	require.Equal(t, "brremux", metaInfo.Quality)
+
+	metaInfo = titleparser.Parse("Summer House S08E06 Start Your Engines 720p AMZN WEB-DL DDP 2.0 H 264-NTb[TGx]")
+	require.Equal(t, 8, metaInfo.Season)
+	require.Equal(t, 6, metaInfo.Episode)
 }

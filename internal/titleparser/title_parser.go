@@ -39,6 +39,7 @@ var (
 		matchAndSetAudio(`(?i)AAC(?:[. ]?2[. ]0)?`, "aac"),
 		parseContainer(`(?i)\b(MKV|AVI|MP4)\b`),
 		parse3D(`(?i)\b((3D))\b`),
+		parseSeasonAndEpisode(`(?i)S(\d{2})E(\d{2})`),
 	}
 )
 
@@ -50,6 +51,8 @@ type MetaInfo struct {
 	Audio      string
 	Container  string
 	ThreeD     bool
+	Season     int
+	Episode    int
 }
 
 func Parse(title string) *MetaInfo {
@@ -106,7 +109,7 @@ func parseResolution(pattern string) func(string, *MetaInfo) {
 		}
 
 		matches := compiled.FindAllStringSubmatch(title, -1)
-		if len(matches) > 0 {
+		if len(matches) > 0 && len(matches[len(matches)-1]) > 1 {
 			mi.Resolution, _ = strconv.Atoi(matches[len(matches)-1][1])
 		}
 	}
@@ -178,5 +181,20 @@ func parse3D(pattern string) func(string, *MetaInfo) {
 		}
 
 		mi.ThreeD = compiled.MatchString(title)
+	}
+}
+
+func parseSeasonAndEpisode(pattern string) func(string, *MetaInfo) {
+	compiled := regexp.MustCompile(pattern)
+	return func(title string, mi *MetaInfo) {
+		if mi.Season > 0 {
+			return
+		}
+
+		matches := compiled.FindAllStringSubmatch(title, -1)
+		if len(matches) > 0 && len(matches[len(matches)-1]) > 2 {
+			mi.Season, _ = strconv.Atoi(matches[len(matches)-1][1])
+			mi.Episode, _ = strconv.Atoi(matches[len(matches)-1][2])
+		}
 	}
 }

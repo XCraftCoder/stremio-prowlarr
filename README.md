@@ -16,3 +16,4 @@ A StremIO addon for Jackett
 - [x] Identify fileID by file type
 - [ ] Prioritize matching by IMDB
 - [ ] Should loop through all pages in torrents to search for hash
+- [ ] Check why couldn't find episode in House S08 1080p BluRay x265 RARBG ORARBG
