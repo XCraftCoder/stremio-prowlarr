@@ -22,7 +22,7 @@ type RealDebrid struct {
 type File struct {
 	ID       string
 	FileName string `json:"filename"`
-	FielSize int    `json:"filesize"`
+	FileSize int    `json:"filesize"`
 }
 
 type AddMagnetResponse struct {
@@ -30,10 +30,10 @@ type AddMagnetResponse struct {
 	URI string `json:"uri"`
 }
 
-type safeCatchedTorrentResponse map[string][]map[string]File
+type safeCatchedTorrentResponse map[string][]map[string]*File
 
 func (c *safeCatchedTorrentResponse) UnmarshalJSON(data []byte) error {
-	mapStruct := map[string][]map[string]File(*c)
+	mapStruct := map[string][]map[string]*File(*c)
 	_ = json.Unmarshal(data, &mapStruct)
 	*c = mapStruct
 	return nil
@@ -41,7 +41,7 @@ func (c *safeCatchedTorrentResponse) UnmarshalJSON(data []byte) error {
 
 func New(apiToken string) *RealDebrid {
 	client := resty.New().
-		SetDebug(true).
+		// SetDebug(true).
 		SetBaseURL("https://api.real-debrid.com/rest/1.0").
 		SetHeader("Accept", "application/json").
 		SetAuthScheme("Bearer").
@@ -53,7 +53,7 @@ func New(apiToken string) *RealDebrid {
 	}
 }
 
-func (rd *RealDebrid) GetFiles(infoHashs []string) (map[string][]File, error) {
+func (rd *RealDebrid) GetFiles(infoHashs []string) (map[string][]*File, error) {
 	result := map[string]safeCatchedTorrentResponse{}
 	resp, err := rd.client.R().
 		SetResult(&result).
@@ -68,18 +68,18 @@ func (rd *RealDebrid) GetFiles(infoHashs []string) (map[string][]File, error) {
 		return nil, resp.Error().(error)
 	}
 
-	files := map[string][]File{}
+	files := map[string][]*File{}
+	found := map[string]bool{}
 	for infoHash, hosterFiles := range result {
 		for _, variants := range hosterFiles {
 			for _, variant := range variants {
-				if len(variant) == 0 {
-					continue
-				}
-
 				for id, f := range variant {
-					newFile := f
-					newFile.ID = id
-					files[infoHash] = append(files[infoHash], newFile)
+					if !found[id] {
+						newFile := f
+						newFile.ID = id
+						files[infoHash] = append(files[infoHash], newFile)
+						found[id] = true
+					}
 				}
 			}
 		}
@@ -90,7 +90,7 @@ func (rd *RealDebrid) GetFiles(infoHashs []string) (map[string][]File, error) {
 }
 
 func (rd *RealDebrid) GetDownloadByMagnetURI(infoHash string, magnetURI string, fileID string) (string, error) {
-	download, err := rd.getDownloadByInfoHash(infoHash)
+	download, err := rd.getDownloadByInfoHash(infoHash, fileID)
 	if err == nil {
 		return download, nil
 	}
@@ -109,10 +109,10 @@ func (rd *RealDebrid) GetDownloadByMagnetURI(infoHash string, magnetURI string, 
 		return "", err
 	}
 
-	return rd.getDownload(torrent)
+	return rd.getDownload(torrent, fileID)
 }
 
-func (rd *RealDebrid) getDownloadByInfoHash(infoHash string) (string, error) {
+func (rd *RealDebrid) getDownloadByInfoHash(infoHash, fileID string) (string, error) {
 	torrents, err := rd.getTorrents()
 	if err != nil {
 		return "", err
@@ -120,7 +120,7 @@ func (rd *RealDebrid) getDownloadByInfoHash(infoHash string) (string, error) {
 
 	for _, torrent := range torrents {
 		if torrent.Hash == infoHash {
-			return rd.getDownload(&torrent)
+			return rd.getDownload(&torrent, fileID)
 		}
 	}
 
@@ -187,9 +187,10 @@ func (rd *RealDebrid) getTorrents() ([]Torrent, error) {
 	return result, nil
 }
 
-func (rd *RealDebrid) getDownload(torrent *Torrent) (string, error) {
-	if torrent.Status == "waiting_files_selection" {
-		err := rd.selectAllFiles(torrent.ID)
+func (rd *RealDebrid) getDownload(torrent *Torrent, fileID string) (string, error) {
+	linkIndex := getIndexOfLinkForFile(torrent, fileID)
+	if torrent.Status == "waiting_files_selection" || linkIndex == -1 {
+		err := rd.selectFileToDownload(torrent.ID, fileID)
 		if err != nil {
 			return "", err
 		}
@@ -209,7 +210,7 @@ func (rd *RealDebrid) getDownload(torrent *Torrent) (string, error) {
 		return "", errors.New("not supported")
 	}
 
-	download, err := rd.generateDownload(torrent.Links[0])
+	download, err := rd.generateDownload(torrent.Links[linkIndex])
 	if err != nil {
 		return "", err
 	}
@@ -239,10 +240,10 @@ func (rd *RealDebrid) generateDownload(hosterLink string) (string, error) {
 	return result.Download, nil
 }
 
-func (rd *RealDebrid) selectAllFiles(torrentID string) error {
+func (rd *RealDebrid) selectFileToDownload(torrentID, fileID string) error {
 	resp, err := rd.client.R().
 		SetFormData(map[string]string{
-			"files": "all",
+			"files": fileID,
 		}).
 		Post("/torrents/selectFiles/" + torrentID)
 	if err != nil {
@@ -258,11 +259,30 @@ func (rd *RealDebrid) selectAllFiles(torrentID string) error {
 	return nil
 }
 
+func getIndexOfLinkForFile(torrent *Torrent, fileID string) int {
+	index := 0
+	for _, f := range torrent.Files {
+		if fmt.Sprint(f.ID) == fileID {
+			if f.Selected > 0 {
+				return index
+			}
+
+			return -1
+		}
+
+		if f.Selected > 0 {
+			index++
+		}
+	}
+
+	return -1
+}
+
 type Torrent struct {
 	ID          string        `json:"id"`
 	Hash        string        `json:"hash"`
 	Status      string        `json:"status"`
-	Progress    int           `json:"progress"`
+	Progress    float64       `json:"progress"`
 	FileName    string        `json:"filename"`
 	OrgFileName string        `json:"original_filename"`
 	Files       []TorrentFile `json:"files"`

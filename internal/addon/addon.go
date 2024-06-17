@@ -39,6 +39,15 @@ var (
 		"cam",
 		"hdcam",
 	}
+
+	mediaContainerExtensions = []string{
+		"mkv",
+		"mk3d",
+		"mp4",
+		"m4v",
+		"mov",
+		"avi",
+	}
 )
 
 // Addon implements a Stremio addon
@@ -71,7 +80,8 @@ type streamRecord struct {
 	TitleInfo     *titleparser.MetaInfo
 	Indexer       jackett.Indexer
 	Torrent       jackett.Torrent
-	Files         []realdebrid.File
+	Files         []*realdebrid.File
+	MediaFile     *realdebrid.File
 }
 
 const (
@@ -164,7 +174,8 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p.Filter(excludeTorrents)
 	p.Shuffle(hasMoreSeeders)
 	p.FanOut(add.enrichInfoHash)
-	p.Batch(add.filterByCached)
+	p.Batch(add.enrichWithCachedFiles)
+	p.FanOut(add.locateMediaFile)
 	p.Shuffle(hasHigherQuality)
 
 	records := add.sinkResults(p)
@@ -172,8 +183,8 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	for _, r := range records {
 		results = append(results, StreamItem{
 			Name:  fmt.Sprintf("[%dp]", r.TitleInfo.Resolution),
-			Title: fmt.Sprintf("%s\n%d|%d|%s", r.Torrent.Title, r.Torrent.Size, r.Torrent.Seeders, r.Indexer.Title),
-			URL:   r.BaseURL + compiled.ReplaceAllString(c.Path(), "/download/"+r.Torrent.GID.ToString()+"/1"),
+			Title: fmt.Sprintf("%s\n%s\n%d|%d|%s", r.Torrent.Title, r.MediaFile.FileName, r.MediaFile.FileSize, r.Torrent.Seeders, r.Indexer.Title),
+			URL:   r.BaseURL + compiled.ReplaceAllString(c.Path(), "/download/"+r.Torrent.GID.ToString()+"/"+r.MediaFile.ID),
 		})
 	}
 
@@ -304,7 +315,7 @@ func (add *Addon) enrichInfoHash(r *streamRecord) ([]*streamRecord, error) {
 	return []*streamRecord{r}, nil
 }
 
-func (add *Addon) filterByCached(records []*streamRecord) ([]*streamRecord, error) {
+func (add *Addon) enrichWithCachedFiles(records []*streamRecord) ([]*streamRecord, error) {
 	infoHashs := make([]string, 0, len(records))
 	for _, record := range records {
 		if record.Torrent.InfoHash == "" {
@@ -366,6 +377,70 @@ func (add *Addon) sinkResults(p *pipe.Pipe[streamRecord]) []*streamRecord {
 func (add *Addon) parseTorrentTitle(r *streamRecord) (*streamRecord, error) {
 	r.TitleInfo = titleparser.Parse(r.Torrent.Title)
 	return r, nil
+}
+
+func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
+	switch r.ContentType {
+	case ContentTypeMovie:
+		r.MediaFile = findMovieMediaFile(r.Files)
+	case ContentTypeSeries:
+		r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf("S%02dE%02d", r.Season, r.Episode))
+
+		if r.MediaFile == nil {
+			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf("%d%02d", r.Season, r.Episode))
+		}
+
+		if r.MediaFile == nil {
+			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf("%d", r.Episode))
+		}
+	}
+
+	if r.MediaFile != nil {
+		return []*streamRecord{r}, nil
+	}
+
+	return nil, nil
+}
+
+func findEpisodeMediaFile(files []*realdebrid.File, text string) *realdebrid.File {
+	var mediaFile *realdebrid.File
+	for _, f := range files {
+		if !hasMediaExtension(f.FileName) || !strings.Contains(f.FileName, text) {
+			continue
+		}
+
+		if mediaFile == nil || mediaFile.FileSize < f.FileSize {
+			mediaFile = f
+		}
+	}
+
+	return mediaFile
+}
+
+func findMovieMediaFile(files []*realdebrid.File) *realdebrid.File {
+	var mediaFile *realdebrid.File
+	for _, f := range files {
+		if !hasMediaExtension(f.FileName) {
+			continue
+		}
+
+		if mediaFile == nil || mediaFile.FileSize < f.FileSize {
+			mediaFile = f
+		}
+	}
+
+	return mediaFile
+}
+
+func hasMediaExtension(fileName string) bool {
+	fileName = strings.ToLower(fileName)
+	for _, extension := range mediaContainerExtensions {
+		if strings.HasSuffix(fileName, extension) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func excludeTorrents(r *streamRecord) bool {
