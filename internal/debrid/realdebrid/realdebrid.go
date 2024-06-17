@@ -3,6 +3,7 @@ package realdebrid
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/go-resty/resty/v2"
@@ -40,10 +41,11 @@ func (c *safeCatchedTorrentResponse) UnmarshalJSON(data []byte) error {
 
 func New(apiToken string) *RealDebrid {
 	client := resty.New().
-		// SetDebug(true).
+		SetDebug(true).
 		SetBaseURL("https://api.real-debrid.com/rest/1.0").
 		SetHeader("Accept", "application/json").
 		SetAuthScheme("Bearer").
+		SetError(ErrorResponse{}).
 		SetAuthToken(apiToken)
 
 	return &RealDebrid{
@@ -53,12 +55,17 @@ func New(apiToken string) *RealDebrid {
 
 func (rd *RealDebrid) GetFiles(infoHashs []string) (map[string][]File, error) {
 	result := map[string]safeCatchedTorrentResponse{}
-	_, err := rd.client.R().
+	resp, err := rd.client.R().
 		SetResult(&result).
 		Get("/torrents/instantAvailability/" + strings.Join(infoHashs, "/"))
 	if err != nil {
 		log.Errorf("Failed to get result from Debrid, err: %v", err)
 		return nil, err
+	}
+
+	if resp.IsError() {
+		log.Errorf("Failed to get result from Debrid, err: %v", resp.Error())
+		return nil, resp.Error().(error)
 	}
 
 	files := map[string][]File{}
@@ -122,7 +129,7 @@ func (rd *RealDebrid) getDownloadByInfoHash(infoHash string) (string, error) {
 
 func (rd *RealDebrid) addMagnet(magnetUri string) (string, error) {
 	result := &AddMagnetResponse{}
-	_, err := rd.client.R().
+	resp, err := rd.client.R().
 		SetFormData(map[string]string{
 			"magnet": magnetUri,
 		}).
@@ -134,12 +141,17 @@ func (rd *RealDebrid) addMagnet(magnetUri string) (string, error) {
 		return "", err
 	}
 
+	if resp.IsError() {
+		log.Errorf("Failed to get result from Debrid, err: %v", resp.Error())
+		return "", resp.Error().(error)
+	}
+
 	return result.ID, nil
 }
 
 func (rd *RealDebrid) getTorrent(torrentID string) (*Torrent, error) {
 	result := &Torrent{}
-	_, err := rd.client.R().
+	resp, err := rd.client.R().
 		SetResult(result).
 		Get("/torrents/info/" + torrentID)
 
@@ -148,18 +160,28 @@ func (rd *RealDebrid) getTorrent(torrentID string) (*Torrent, error) {
 		return nil, err
 	}
 
+	if resp.IsError() {
+		log.Errorf("Failed to get result from Debrid, err: %v", resp.Error())
+		return nil, resp.Error().(error)
+	}
+
 	return result, nil
 }
 
 func (rd *RealDebrid) getTorrents() ([]Torrent, error) {
 	result := []Torrent{}
-	_, err := rd.client.R().
+	resp, err := rd.client.R().
 		SetResult(&result).
 		Get("/torrents")
 
 	if err != nil {
 		log.Errorf("Failed to fetch all torrents: %v", err)
 		return nil, err
+	}
+
+	if resp.IsError() {
+		log.Errorf("Failed to get torrents from Debrid, err: %v", resp.Error())
+		return nil, resp.Error().(error)
 	}
 
 	return result, nil
@@ -197,7 +219,7 @@ func (rd *RealDebrid) getDownload(torrent *Torrent) (string, error) {
 
 func (rd *RealDebrid) generateDownload(hosterLink string) (string, error) {
 	result := &UnrestrictedLinkResp{}
-	_, err := rd.client.R().
+	resp, err := rd.client.R().
 		SetResult(&result).
 		SetFormData(map[string]string{
 			"link": hosterLink,
@@ -209,11 +231,16 @@ func (rd *RealDebrid) generateDownload(hosterLink string) (string, error) {
 		return "", err
 	}
 
+	if resp.IsError() {
+		log.Errorf("Failed to generate download link from Debrid, err: %v", resp.Error())
+		return "", resp.Error().(error)
+	}
+
 	return result.Download, nil
 }
 
 func (rd *RealDebrid) selectAllFiles(torrentID string) error {
-	_, err := rd.client.R().
+	resp, err := rd.client.R().
 		SetFormData(map[string]string{
 			"files": "all",
 		}).
@@ -221,6 +248,11 @@ func (rd *RealDebrid) selectAllFiles(torrentID string) error {
 	if err != nil {
 		log.Errorf("Failed to select files on Debrid, err: %v", err)
 		return err
+	}
+
+	if resp.IsError() {
+		log.Errorf("Failed to select files from Debrid, err: %v", resp.Error())
+		return resp.Error().(error)
 	}
 
 	return nil
@@ -246,4 +278,13 @@ type TorrentFile struct {
 
 type UnrestrictedLinkResp struct {
 	Download string `json:"download"`
+}
+
+type ErrorResponse struct {
+	ErrTxt    string `json:"error"`
+	ErrorCode int    `json:"error_code"`
+}
+
+func (er ErrorResponse) Error() string {
+	return fmt.Sprintf("[%s,%d]", er.ErrTxt, er.ErrorCode)
 }

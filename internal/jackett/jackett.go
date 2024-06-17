@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -36,7 +37,7 @@ func New(apiURL string, apiKey string) *Jackett {
 
 func (j *Jackett) GetAllIndexers() ([]Indexer, error) {
 	result := &IndexersResponse{}
-	_, err := j.client.
+	resp, err := j.client.
 		R().
 		SetQueryParam("t", "indexers").
 		SetQueryParam("configured", "true").
@@ -47,14 +48,17 @@ func (j *Jackett) GetAllIndexers() ([]Indexer, error) {
 		return nil, err
 	}
 
+	if resp.IsError() {
+		return nil, fmt.Errorf("error response from jackett: %v", resp.Error())
+	}
+
 	return result.Indexers, nil
 }
 
 func (j *Jackett) SearchMovieTorrents(indexer Indexer, name string) ([]Torrent, error) {
 	result := &TorrentsResponse{}
-	_, err := j.client.
+	resp, err := j.client.
 		R().
-		SetQueryParam("t", "movie").
 		SetQueryParam("query", name).
 		SetQueryParam("category", moviesCategory).
 		SetResult(result).
@@ -62,6 +66,36 @@ func (j *Jackett) SearchMovieTorrents(indexer Indexer, name string) ([]Torrent, 
 
 	if err != nil {
 		return nil, err
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("error response from jackett: %v", resp.Error())
+	}
+
+	for i := range result.Torrents {
+		result.Torrents[i].Link = strings.Replace(result.Torrents[i].Link, "http://localhost:9117", j.apiURL, 1)
+		result.Torrents[i].InfoHash = strings.ToLower(result.Torrents[i].InfoHash)
+		result.Torrents[i].GID = generateGID(result.Torrents[i].Guid)
+	}
+
+	return result.Torrents, nil
+}
+
+func (j *Jackett) SearchSeriesTorrents(indexer Indexer, name string, season int) ([]Torrent, error) {
+	result := &TorrentsResponse{}
+	resp, err := j.client.
+		R().
+		SetQueryParam("query", fmt.Sprintf("%s S%02d", name, season)).
+		SetQueryParam("category", tvCategory).
+		SetResult(result).
+		Get("api/v2.0/indexers/" + indexer.ID + "/results")
+
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("error response from jackett: %v", resp.Error())
 	}
 
 	for i := range result.Torrents {

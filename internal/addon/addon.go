@@ -254,6 +254,8 @@ func (add *Addon) searchForTorrents(r *streamRecord) ([]*streamRecord, error) {
 	switch r.ContentType {
 	case ContentTypeMovie:
 		torrents, err = add.jackettClient.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
+	case ContentTypeSeries:
+		torrents, err = add.jackettClient.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name, r.Season)
 	}
 
 	if err != nil {

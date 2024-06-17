@@ -14,3 +14,4 @@ A StremIO addon for Jackett
 - [ ] Only download necessary files
 - [ ] Identify fileID by file size
 - [ ] Identify fileID by file type
+- [ ] Prioritize matching by IMDB
