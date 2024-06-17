@@ -20,4 +20,7 @@ func TestParse(t *testing.T) {
 	metaInfo = titleparser.Parse("Summer House S08E06 Start Your Engines 720p AMZN WEB-DL DDP 2.0 H 264-NTb[TGx]")
 	require.Equal(t, 8, metaInfo.Season)
 	require.Equal(t, 6, metaInfo.Episode)
+
+	// metaInfo = titleparser.Parse("Mind Your Language - S01 to S03 - Sitcom - Xvid -Slimoo")
+	// require.Equal(t, 1, metaInfo.Season)
 }

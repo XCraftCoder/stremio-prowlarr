@@ -81,11 +81,11 @@ func (j *Jackett) SearchMovieTorrents(indexer Indexer, name string) ([]Torrent, 
 	return result.Torrents, nil
 }
 
-func (j *Jackett) SearchSeriesTorrents(indexer Indexer, name string, season int) ([]Torrent, error) {
+func (j *Jackett) SearchSeriesTorrents(indexer Indexer, name string) ([]Torrent, error) {
 	result := &TorrentsResponse{}
 	resp, err := j.client.
 		R().
-		SetQueryParam("query", fmt.Sprintf("%s S%02d", name, season)).
+		SetQueryParam("query", name).
 		SetQueryParam("category", tvCategory).
 		SetResult(result).
 		Get("api/v2.0/indexers/" + indexer.ID + "/results")

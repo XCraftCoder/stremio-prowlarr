@@ -198,3 +198,18 @@ func parseSeasonAndEpisode(pattern string) func(string, *MetaInfo) {
 		}
 	}
 }
+
+// TODO: find a way to parse season better
+// func parseSeason(pattern string) func(string, *MetaInfo) {
+// 	compiled := regexp.MustCompile(pattern)
+// 	return func(title string, mi *MetaInfo) {
+// 		if mi.Season > 0 {
+// 			return
+// 		}
+
+// 		matches := compiled.FindAllStringSubmatch(title, -1)
+// 		if len(matches) > 0 && len(matches[len(matches)-1]) > 1 {
+// 			mi.Season, _ = strconv.Atoi(matches[len(matches)-1][1])
+// 		}
+// 	}
+// }

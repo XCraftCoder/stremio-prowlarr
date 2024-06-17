@@ -268,7 +268,7 @@ func (add *Addon) searchForTorrents(r *streamRecord) ([]*streamRecord, error) {
 	case ContentTypeMovie:
 		torrents, err = add.jackettClient.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
 	case ContentTypeSeries:
-		torrents, err = add.jackettClient.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name, r.Season)
+		torrents, err = add.jackettClient.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name)
 	}
 
 	if err != nil {
@@ -468,10 +468,17 @@ func excludeTorrents(r *streamRecord) bool {
 		!slices.Contains(camSources, r.TitleInfo.Quality) && !r.TitleInfo.ThreeD
 	imdbOK := (r.Torrent.Imdb == 0 || r.Torrent.Imdb == r.MetaInfo.IMDBID)
 	yearOK := (r.TitleInfo.Year == 0 || (r.MetaInfo.FromYear <= r.TitleInfo.Year && r.MetaInfo.ToYear >= r.TitleInfo.Year))
+	seasonOK := r.ContentType != ContentTypeSeries || (r.TitleInfo.Season == 0 || r.TitleInfo.Season == r.Season)
 	episodeOK := r.ContentType != ContentTypeSeries || (r.TitleInfo.Episode == 0 || r.TitleInfo.Episode == r.Episode)
-	result := qualityOK && imdbOK && yearOK && episodeOK
+	result := qualityOK && imdbOK && yearOK && seasonOK && episodeOK
 	if !result {
-		log.Infof("Excluded %s, quality: %v, imdb: %d, %v, year: %v, episode: %v", r.Torrent.Title, qualityOK, r.Torrent.Imdb, imdbOK, yearOK, episodeOK)
+		log.Infof("Excluded %s, quality: %v, imdb: %v, year: %v, season: %v, episode: %v",
+			r.Torrent.Title,
+			qualityOK,
+			imdbOK, yearOK,
+			seasonOK,
+			episodeOK,
+		)
 	}
 	return result
 }

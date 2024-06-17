@@ -19,3 +19,5 @@ A StremIO addon for Jackett
 - [ ] Check why couldn't find episode in House S08 1080p BluRay x265 RARBG ORARBG
 - [x] Deduplicate infoHash
 - [ ] Check flaky results with House S08E01
+- [ ] Better pattern to locate files for series
+- [ ] Parse season only from the torrent title
