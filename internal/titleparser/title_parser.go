@@ -43,7 +43,7 @@ var (
 
 type MetaInfo struct {
 	Resolution int
-	Year       string
+	Year       int
 	Source     string
 	Codec      string
 	Audio      string
@@ -86,7 +86,14 @@ func findAndSet(value *string, title string, regex *regexp.Regexp, target string
 func parseYear(pattern string) func(string, *MetaInfo) {
 	compiled := regexp.MustCompile(pattern)
 	return func(title string, mi *MetaInfo) {
-		findValue(&mi.Year, title, compiled)
+		if mi.Year > 0 {
+			return
+		}
+
+		matches := compiled.FindAllString(title, -1)
+		if len(matches) > 0 {
+			mi.Year, _ = strconv.Atoi(matches[len(matches)-1])
+		}
 	}
 }
 
