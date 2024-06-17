@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/bongnv/jackett-stremio/internal/cinemeta"
 	"github.com/bongnv/jackett-stremio/internal/debrid/realdebrid"
@@ -174,6 +175,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p.Filter(excludeTorrents)
 	p.Shuffle(hasMoreSeeders)
 	p.FanOut(add.enrichInfoHash)
+	p.Filter(deduplicateTorrent())
 	p.Batch(add.enrichWithCachedFiles)
 	p.FanOut(add.locateMediaFile)
 	p.Shuffle(hasHigherQuality)
@@ -403,6 +405,23 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 	return nil, nil
 }
 
+func deduplicateTorrent() func(r *streamRecord) bool {
+	found := &sync.Map{}
+	return func(r *streamRecord) bool {
+		if r.Torrent.InfoHash == "" {
+			log.Infof("Skipped %s due to empty hash", r.Torrent.Title)
+			return false
+		}
+
+		if _, loaded := found.LoadOrStore(r.Torrent.InfoHash, struct{}{}); loaded {
+			log.Infof("Skipped %s due to duplication of %s", r.Torrent.Title, r.Torrent.InfoHash)
+			return false
+		}
+
+		return true
+	}
+}
+
 func findEpisodeMediaFile(files []*realdebrid.File, text string) *realdebrid.File {
 	var mediaFile *realdebrid.File
 	for _, f := range files {
@@ -458,6 +477,14 @@ func excludeTorrents(r *streamRecord) bool {
 }
 
 func hasMoreSeeders(r1, r2 *streamRecord) bool {
+	if r1.Torrent.Imdb > 0 && r2.Torrent.Imdb == 0 {
+		return true
+	}
+
+	if r1.Torrent.Imdb == 0 && r2.Torrent.Imdb > 0 {
+		return false
+	}
+
 	if r1.TitleInfo.Resolution > r2.TitleInfo.Resolution {
 		return true
 	}
