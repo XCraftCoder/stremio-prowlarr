@@ -4,5 +4,5 @@ type MetaInfo struct {
 	Name     string
 	FromYear int
 	ToYear   int
-	IMDBID   string
+	IMDBID   uint
 }

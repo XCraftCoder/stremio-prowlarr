@@ -160,6 +160,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p.Map(add.fetchMetaInfo)
 	p.FanOut(add.fanOutToAllIndexers)
 	p.FanOut(add.searchForTorrents)
+	p.Filter(matchIMDB)
 	p.Map(add.parseTorrentTitle)
 	p.Filter(excludeTorrents)
 	p.Shuffle(hasMoreSeeders)
@@ -355,6 +356,10 @@ func (add *Addon) parseTorrentTitle(r *streamRecord) (*streamRecord, error) {
 
 func excludeTorrents(r *streamRecord) bool {
 	return !slices.Contains(remuxSources, r.TitleInfo.Source) && !slices.Contains(camSources, r.TitleInfo.Source) && !r.TitleInfo.ThreeD
+}
+
+func matchIMDB(r *streamRecord) bool {
+	return r.Torrent.Imdb == 0 || r.Torrent.Imdb == r.MetaInfo.IMDBID
 }
 
 func hasMoreSeeders(r1, r2 *streamRecord) bool {

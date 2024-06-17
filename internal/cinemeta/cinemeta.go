@@ -36,10 +36,11 @@ func (c *CineMeta) GetMovieById(id string) (*model.MetaInfo, error) {
 
 	result := resp.Result().(*MovieInfoResponse)
 	year, _ := strconv.Atoi(result.Meta.Year)
+	imdbID, err := strconv.Atoi(strings.TrimPrefix(result.Meta.IMDBID, "tt"))
 
 	return &model.MetaInfo{
 		Name:     result.Meta.Name,
-		IMDBID:   result.Meta.IMDBID,
+		IMDBID:   uint(imdbID),
 		FromYear: year,
 		ToYear:   year,
 	}, nil
@@ -62,10 +63,11 @@ func (c CineMeta) GetSeriesById(id string) (*model.MetaInfo, error) {
 		fromYear, _ = strconv.Atoi(tokens[0])
 		toYear = fromYear
 	}
+	imdbID, err := strconv.Atoi(strings.TrimPrefix(result.Meta.IMDBID, "tt"))
 
 	return &model.MetaInfo{
 		Name:     result.Meta.Name,
-		IMDBID:   result.Meta.IMDBID,
+		IMDBID:   uint(imdbID),
 		FromYear: fromYear,
 		ToYear:   toYear,
 	}, nil
