@@ -354,8 +354,8 @@ func (add *Addon) parseTorrentTitle(r *streamRecord) (*streamRecord, error) {
 }
 
 func excludeTorrents(r *streamRecord) bool {
-	return !slices.Contains(remuxSources, r.TitleInfo.Source) &&
-		!slices.Contains(camSources, r.TitleInfo.Source) && !r.TitleInfo.ThreeD &&
+	return !slices.Contains(remuxSources, r.TitleInfo.Quality) &&
+		!slices.Contains(camSources, r.TitleInfo.Quality) && !r.TitleInfo.ThreeD &&
 		(r.Torrent.Imdb == 0 || r.Torrent.Imdb == r.MetaInfo.IMDBID) &&
 		(r.TitleInfo.Year == 0 || (r.MetaInfo.FromYear <= r.TitleInfo.Year && r.MetaInfo.ToYear >= r.TitleInfo.Year))
 }

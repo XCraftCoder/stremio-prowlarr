@@ -12,5 +12,8 @@ func TestParse(t *testing.T) {
 	require.Equal(t, 2160, metaInfo.Resolution)
 
 	metaInfo = titleparser.Parse("Mad Max: Fury Road (2015) 4K UHD BDRemux 2160p Dolby Vision-Rja")
-	require.Equal(t, "bdremux", metaInfo.Source)
+	require.Equal(t, "bdremux", metaInfo.Quality)
+
+	metaInfo = titleparser.Parse("Cloud Atlas 2012 1080p USA Blu-ray Remux AVC DTS-HD MA 5.1 -KRa")
+	require.Equal(t, "brremux", metaInfo.Quality)
 }

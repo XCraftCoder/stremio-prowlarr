@@ -8,5 +8,5 @@ A StremIO addon for Jackett
 - [ ] Cache redirect/download link?
 - [ ] Consider buffering for better batching & shuffling
 - [x] Support exclusions (Remux, CAM) ...
-- [ ] Check if it matches IMDB
+- [x] Check if it matches IMDB
 - [ ] Only download necessary files

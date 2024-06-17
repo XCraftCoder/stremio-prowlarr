@@ -11,25 +11,26 @@ var (
 		parseYear(`\b(((?:19[0-9]|20[0-9])[0-9]))\b`),
 		parseResolution(`(?i)([0-9]{3,4})[pi]`),
 		matchAndSetResolution(`(?i)(4k)`, 2160),
-		parseSource(`\b(?:HD-?)?CAM\b`),
-		matchAndSetSource(`(?i)\b(?:HD-?)?T(?:ELE)?S(?:YNC)?\b`, "telesync"),
-		parseSource(`(?i)\bHD-?Rip\b`),
-		parseSource(`(?i)\bBRRip\b`),
-		parseSource(`(?i)\bBDRip\b`),
-		parseSource(`(?i)\bDVDRip\b`),
-		matchAndSetSource(`(?i)\bDVD(?:R[0-9])?\b`, "dvd"),
-		parseSource(`(?i)\bDVDscr\b`),
-		parseSource(`(?i)\b(?:HD-?)?TVRip\b`),
-		parseSource(`\bTC\b`),
-		parseSource(`(?i)\bPPVRip\b`),
-		parseSource(`(?i)\bR5\b`),
-		parseSource(`(?i)\bVHSSCR\b`),
-		parseSource(`(?i)\bBluray\b`),
-		parseSource(`(?i)\bWEB-?DL\b`),
-		parseSource(`(?i)\bWEB-?Rip\b`),
-		parseSource(`(?i)\b(?:DL|WEB|BD|BR)REMUX\b`),
-		parseSource(`(?i)\b(DivX|XviD)\b`),
-		parseSource(`(?i)HDTV`),
+		parseQuality(`\b(?:HD-?)?CAM\b`),
+		matchAndSetQuality(`(?i)\b(?:HD-?)?T(?:ELE)?S(?:YNC)?\b`, "telesync"),
+		parseQuality(`(?i)\bHD-?Rip\b`),
+		parseQuality(`(?i)\bBRRip\b`),
+		parseQuality(`(?i)\bBDRip\b`),
+		parseQuality(`(?i)\bDVDRip\b`),
+		matchAndSetQuality(`(?i)\bDVD(?:R[0-9])?\b`, "dvd"),
+		parseQuality(`(?i)\bDVDscr\b`),
+		parseQuality(`(?i)\b(?:HD-?)?TVRip\b`),
+		parseQuality(`\bTC\b`),
+		parseQuality(`(?i)\bPPVRip\b`),
+		parseQuality(`(?i)\bR5\b`),
+		parseQuality(`(?i)\bVHSSCR\b`),
+		matchAndSetQuality(`(?i)\bBlu-?ray Remux\b`, "brremux"),
+		matchAndSetQuality(`(?i)\bBlu-?ray\b`, "bluray"),
+		parseQuality(`(?i)\bWEB-?DL\b`),
+		parseQuality(`(?i)\bWEB-?Rip\b`),
+		parseQuality(`(?i)\b(?:DL|WEB|BD|BR)REMUX\b`),
+		parseQuality(`(?i)\b(DivX|XviD)\b`),
+		parseQuality(`(?i)HDTV`),
 		parseCodec(`(?i)dvix|mpeg2|divx|xvid|[xh][-. ]?26[45]|avc|hevc`),
 		parseAudio(`MD|MP3|mp3|FLAC|Atmos|DTS(?:-HD)?|TrueHD`),
 		parseAudio(`(?i)Dual[- ]Audio`),
@@ -44,7 +45,7 @@ var (
 type MetaInfo struct {
 	Resolution int
 	Year       int
-	Source     string
+	Quality    string
 	Codec      string
 	Audio      string
 	Container  string
@@ -124,17 +125,17 @@ func matchAndSetResolution(pattern string, value int) func(string, *MetaInfo) {
 	}
 }
 
-func parseSource(pattern string) func(string, *MetaInfo) {
+func parseQuality(pattern string) func(string, *MetaInfo) {
 	compiled := regexp.MustCompile(pattern)
 	return func(title string, mi *MetaInfo) {
-		findValue(&mi.Source, title, compiled)
+		findValue(&mi.Quality, title, compiled)
 	}
 }
 
-func matchAndSetSource(pattern string, value string) func(string, *MetaInfo) {
+func matchAndSetQuality(pattern string, value string) func(string, *MetaInfo) {
 	compiled := regexp.MustCompile(pattern)
 	return func(title string, mi *MetaInfo) {
-		findAndSet(&mi.Source, title, compiled, value)
+		findAndSet(&mi.Quality, title, compiled, value)
 	}
 }
 
