@@ -14,8 +14,9 @@ type shuffleStage[R any] struct {
 }
 
 func (s *shuffleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
+	shouldDrain := false
 	for {
-		if len(s.queue.data) == cap(s.queue.data) {
+		if len(s.queue.data) == cap(s.queue.data) || (shouldDrain && s.queue.Len() > 0) {
 			peek := s.queue.Peek()
 			select {
 			case outCh <- peek:
@@ -27,7 +28,9 @@ func (s *shuffleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 			select {
 			case r, ok := <-inCh:
 				if !ok {
-					return
+					// inCh is closed
+					shouldDrain = true
+					continue
 				}
 				heap.Push(s.queue, r)
 			default:
@@ -38,7 +41,8 @@ func (s *shuffleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 				case newR, ok := <-inCh:
 					if !ok {
 						// inCh is closed
-						return
+						shouldDrain = true
+						continue
 					}
 					heap.Push(s.queue, newR)
 				case <-s.stopped:

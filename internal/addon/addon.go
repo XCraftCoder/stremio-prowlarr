@@ -399,6 +399,7 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 		return []*streamRecord{r}, nil
 	}
 
+	log.Infof("Couldn't locate media file: %s, %v", r.Torrent.Title, r.Files)
 	return nil, nil
 }
 
@@ -444,10 +445,17 @@ func hasMediaExtension(fileName string) bool {
 }
 
 func excludeTorrents(r *streamRecord) bool {
-	return !slices.Contains(remuxSources, r.TitleInfo.Quality) &&
-		!slices.Contains(camSources, r.TitleInfo.Quality) && !r.TitleInfo.ThreeD &&
-		(r.Torrent.Imdb == 0 || r.Torrent.Imdb == r.MetaInfo.IMDBID) &&
-		(r.TitleInfo.Year == 0 || (r.MetaInfo.FromYear <= r.TitleInfo.Year && r.MetaInfo.ToYear >= r.TitleInfo.Year))
+	qualityOK := !slices.Contains(remuxSources, r.TitleInfo.Quality) &&
+		!slices.Contains(camSources, r.TitleInfo.Quality) && !r.TitleInfo.ThreeD
+	imdbOK := (r.Torrent.Imdb == 0 || r.Torrent.Imdb == r.MetaInfo.IMDBID)
+	yearOK := (r.TitleInfo.Year == 0 || (r.MetaInfo.FromYear <= r.TitleInfo.Year && r.MetaInfo.ToYear >= r.TitleInfo.Year))
+	result := qualityOK &&
+		imdbOK &&
+		yearOK
+	if !result {
+		log.Infof("Excluded %s, quality: %v, imdb: %d, %v, year: %v", r.Torrent.Title, qualityOK, r.Torrent.Imdb, imdbOK, yearOK)
+	}
+	return result
 }
 
 func hasMoreSeeders(r1, r2 *streamRecord) bool {

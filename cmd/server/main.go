@@ -24,7 +24,9 @@ func main() {
 
 	app := fiber.New()
 	app.Use(cors.New())
-	app.Use(recover.New())
+	app.Use(recover.New(recover.Config{
+		EnableStackTrace: true,
+	}))
 	app.Use(logger.New())
 
 	add := addon.New(

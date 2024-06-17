@@ -74,8 +74,9 @@ func (s *batchStage[R]) batchRecords(wg *sync.WaitGroup, inCh <-chan *R) {
 func (s *batchStage[R]) processNextBatch(r *R, inCh <-chan *R) {
 	newBatch := make([]*R, 0, s.batchSize)
 	newBatch = append(newBatch, r)
+	shouldDrain := false
 	for {
-		if len(newBatch) == s.batchSize {
+		if len(newBatch) == s.batchSize || shouldDrain {
 			select {
 			case <-s.stoped:
 			default:
@@ -92,7 +93,8 @@ func (s *batchStage[R]) processNextBatch(r *R, inCh <-chan *R) {
 		case record, ok := <-inCh:
 			if !ok {
 				// inCh is closed
-				return
+				shouldDrain = true
+				continue
 			}
 
 			newBatch = append(newBatch, record)
@@ -101,7 +103,8 @@ func (s *batchStage[R]) processNextBatch(r *R, inCh <-chan *R) {
 			case record, ok := <-inCh:
 				if !ok {
 					// inCh is closed
-					return
+					shouldDrain = true
+					continue
 				}
 
 				newBatch = append(newBatch, record)

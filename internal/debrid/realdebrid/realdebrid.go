@@ -206,7 +206,9 @@ func (rd *RealDebrid) getDownload(torrent *Torrent, fileID string) (string, erro
 		return "", ErrTorrentNotReady
 	}
 
-	if len(torrent.Links) == 0 {
+	linkIndex = getIndexOfLinkForFile(torrent, fileID)
+	if len(torrent.Links) == 0 || linkIndex == -1 || len(torrent.Links) <= linkIndex {
+		log.Infof("Invalid torrent link: %d, len: %d", linkIndex, len(torrent.Links))
 		return "", errors.New("not supported")
 	}
 

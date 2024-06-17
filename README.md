@@ -11,7 +11,8 @@ A StremIO addon for Jackett
 - [ ] Consider buffering for better batching & shuffling
 - [x] Support exclusions (Remux, CAM) ...
 - [x] Check if it matches IMDB
-- [ ] Only download necessary files
-- [ ] Identify fileID by file size
-- [ ] Identify fileID by file type
+- [x] Only download necessary files
+- [x] Identify fileID by file size
+- [x] Identify fileID by file type
 - [ ] Prioritize matching by IMDB
+- [ ] Should loop through all pages in torrents to search for hash
