@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -64,7 +65,7 @@ type streamRecord struct {
 	ID            string
 	Season        int
 	Episode       int
-	HostURL       string
+	BaseURL       string
 	RemoteAddress string
 	MetaInfo      *model.MetaInfo
 	TitleInfo     *titleparser.MetaInfo
@@ -75,6 +76,7 @@ type streamRecord struct {
 
 const (
 	maxStreamsResult = 10
+	magnetUriExpiry  = 10 * 60 // 10 minutes
 )
 
 func New(opts ...Option) *Addon {
@@ -122,39 +124,37 @@ func (add *Addon) HandleGetManifest(c *fiber.Ctx) error {
 }
 
 func (add *Addon) HandleDownload(c *fiber.Ctx) error {
-	infoHash := strings.ToLower(c.Params("infoHash"))
-	download, err := add.realDebrid.GetDownloadByInfoHash(infoHash)
-
-	if err != nil && err != realdebrid.ErrNoTorrentFound {
-		log.Errorf("Couldn't find download link from the given hash %s: %v", infoHash, err)
+	torrentID := strings.ToLower(c.Params("torrentID"))
+	fileID := strings.ToLower(c.Params("fileID"))
+	rawTorrentID, err := jackett.TorrentIDFromString(torrentID)
+	if err != nil {
+		log.Errorf("Invalid torrent ID %s, err: %v", torrentID, err)
 		return err
 	}
 
-	if err == realdebrid.ErrNoTorrentFound {
-		val, err := add.cache.Get([]byte(infoHash))
-		if err != nil {
-			log.Errorf("Couldn't find the infoHash from cache: %v", err)
-			return err
-		}
+	magnetURI, err := add.cache.Get(rawTorrentID)
+	if err != nil {
+		log.WithContext(c.Context()).Errorf("Couldn't find the magnet URI for %s in cache: %v", torrentID, err)
+		return err
+	}
 
-		record := streamRecord{}
-		err = gob.NewDecoder(bytes.NewReader(val)).Decode(&record)
-		if err != nil {
-			log.WithContext(c.Context()).Errorf("Couldn't decode the cached data: %v", err)
-			return err
-		}
+	magnet, err := jackett.ParseMagnetUri(string(magnetURI))
+	if err != nil {
+		log.WithContext(c.Context()).Errorf("Couldn't parse the magnet URI for %s: %v", torrentID, err)
+		return err
+	}
 
-		download, err = add.realDebrid.GetDownloadByMagnetURI(record.Torrent.MagnetUri)
-		if err != nil {
-			log.WithContext(c.Context()).Errorf("Couldn't add magnet link: %v", err)
-			return err
-		}
+	download, err := add.realDebrid.GetDownloadByMagnetURI(magnet.InfoHashStr(), string(magnetURI), fileID)
+	if err != nil {
+		log.WithContext(c.Context()).Errorf("Couldn't generate the download link for %s, %s: %v", torrentID, fileID, err)
+		return err
 	}
 
 	return c.Redirect(download)
 }
 
 func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
+	compiled := regexp.MustCompile(`/stream/(movie|series).+$`)
 	p := pipe.New(add.sourceFromContext(c))
 
 	p.Map(add.fetchMetaInfo)
@@ -173,7 +173,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 		results = append(results, StreamItem{
 			Name:  fmt.Sprintf("[%dp]", r.TitleInfo.Resolution),
 			Title: fmt.Sprintf("%s\n%d|%d|%s", r.Torrent.Title, r.Torrent.Size, r.Torrent.Seeders, r.Indexer.Title),
-			URL:   r.HostURL + "/download/" + r.Torrent.InfoHash,
+			URL:   r.BaseURL + compiled.ReplaceAllString(c.Path(), "/download/"+r.Torrent.GID.ToString()+"/1"),
 		})
 	}
 
@@ -203,7 +203,7 @@ func (add *Addon) sourceFromContext(c *fiber.Ctx) func() ([]*streamRecord, error
 			ID:            id,
 			Season:        season,
 			Episode:       episode,
-			HostURL:       c.Protocol() + "://" + c.Hostname() + c.Path(),
+			BaseURL:       c.BaseURL(),
 			RemoteAddress: c.Context().RemoteIP().String(),
 		}}, nil
 	}
@@ -274,9 +274,28 @@ func (add *Addon) searchForTorrents(r *streamRecord) ([]*streamRecord, error) {
 
 func (add *Addon) enrichInfoHash(r *streamRecord) ([]*streamRecord, error) {
 	var err error
+
+	if r.Torrent.MagnetUri == "" {
+		magnetUri, err := add.cache.Get(r.Torrent.GID)
+		if err == nil {
+			r.Torrent.MagnetUri = string(magnetUri)
+		}
+	}
+
 	r.Torrent, err = add.jackettClient.FetchMagnetURI(r.Torrent)
 	if err != nil {
 		log.Errorf("Failed to fetch magnetUri for %s due to: %v", r.Torrent.Guid, err)
+		return nil, nil
+	}
+
+	if r.Torrent.MagnetUri == "" {
+		log.Warnf("Unable to find Magnet URI for %s", r.Torrent.Guid)
+		return nil, nil
+	}
+
+	err = add.cache.Set(r.Torrent.GID, []byte(r.Torrent.MagnetUri), magnetUriExpiry)
+	if err != nil {
+		log.Errorf("Failed to cache the magnet URI due to: %v", err)
 		return nil, nil
 	}
 
@@ -327,13 +346,7 @@ func (add *Addon) sinkResults(p *pipe.Pipe[streamRecord]) []*streamRecord {
 			return nil
 		}
 
-		err = add.cache.Set([]byte(r.Torrent.InfoHash), buf.Bytes(), 10*60)
-		if err != nil {
-			log.Errorf("Failed to cache the record: %s, %v", r.Torrent.InfoHash, err)
-			return nil
-		}
 		records = append(records, r)
-
 		if len(records) == maxStreamsResult {
 			p.Stop()
 		}
@@ -361,6 +374,14 @@ func excludeTorrents(r *streamRecord) bool {
 }
 
 func hasMoreSeeders(r1, r2 *streamRecord) bool {
+	if r1.TitleInfo.Resolution > r2.TitleInfo.Resolution {
+		return true
+	}
+
+	if r1.TitleInfo.Resolution < r2.TitleInfo.Resolution {
+		return false
+	}
+
 	if r1.Torrent.MagnetUri != "" && r2.Torrent.MagnetUri == "" {
 		return true
 	}

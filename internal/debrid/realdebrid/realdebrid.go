@@ -82,7 +82,30 @@ func (rd *RealDebrid) GetFiles(infoHashs []string) (map[string][]File, error) {
 	return files, nil
 }
 
-func (rd *RealDebrid) GetDownloadByInfoHash(infoHash string) (string, error) {
+func (rd *RealDebrid) GetDownloadByMagnetURI(infoHash string, magnetURI string, fileID string) (string, error) {
+	download, err := rd.getDownloadByInfoHash(infoHash)
+	if err == nil {
+		return download, nil
+	}
+
+	if err != ErrNoTorrentFound {
+		return "", err
+	}
+
+	torrentID, err := rd.addMagnet(magnetURI)
+	if err != nil {
+		return "", err
+	}
+
+	torrent, err := rd.getTorrent(torrentID)
+	if err != nil {
+		return "", err
+	}
+
+	return rd.getDownload(torrent)
+}
+
+func (rd *RealDebrid) getDownloadByInfoHash(infoHash string) (string, error) {
 	torrents, err := rd.getTorrents()
 	if err != nil {
 		return "", err
@@ -95,20 +118,6 @@ func (rd *RealDebrid) GetDownloadByInfoHash(infoHash string) (string, error) {
 	}
 
 	return "", ErrNoTorrentFound
-}
-
-func (rd *RealDebrid) GetDownloadByMagnetURI(magnetURI string) (string, error) {
-	torrentID, err := rd.addMagnet(magnetURI)
-	if err != nil {
-		return "", err
-	}
-
-	torrent, err := rd.getTorrent(torrentID)
-	if err != nil {
-		return "", err
-	}
-
-	return rd.getDownload(torrent)
 }
 
 func (rd *RealDebrid) addMagnet(magnetUri string) (string, error) {

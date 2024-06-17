@@ -2,7 +2,9 @@ package jackett
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"errors"
+	"io"
 	"strings"
 
 	"github.com/go-resty/resty/v2"
@@ -65,6 +67,7 @@ func (j *Jackett) SearchMovieTorrents(indexer Indexer, name string) ([]Torrent, 
 	for i := range result.Torrents {
 		result.Torrents[i].Link = strings.Replace(result.Torrents[i].Link, "http://localhost:9117", j.apiURL, 1)
 		result.Torrents[i].InfoHash = strings.ToLower(result.Torrents[i].InfoHash)
+		result.Torrents[i].GID = generateGID(result.Torrents[i].Guid)
 	}
 
 	return result.Torrents, nil
@@ -111,4 +114,10 @@ func (j *Jackett) FetchMagnetURI(torrent Torrent) (Torrent, error) {
 	}
 
 	return torrent, nil
+}
+
+func generateGID(content string) []byte {
+	h := sha1.New()
+	io.WriteString(h, content)
+	return h.Sum(nil)
 }

@@ -1,5 +1,11 @@
 package jackett
 
+import (
+	"encoding/hex"
+)
+
+type TorrentID []byte
+
 type IndexersResponse struct {
 	Indexers []Indexer `xml:"indexer"`
 }
@@ -10,6 +16,7 @@ type Indexer struct {
 }
 
 type Torrent struct {
+	GID       TorrentID
 	Title     string   `json:"Title"`
 	Guid      string   `json:"Guid"`
 	Seeders   uint     `json:"Seeders"`
@@ -37,4 +44,12 @@ type RSSItem struct {
 
 type ChannelItem struct {
 	Items []Torrent `xml:"item"`
+}
+
+func (t TorrentID) ToString() string {
+	return hex.EncodeToString(t)
+}
+
+func TorrentIDFromString(encoded string) (TorrentID, error) {
+	return hex.DecodeString(encoded)
 }

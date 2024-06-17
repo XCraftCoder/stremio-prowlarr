@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	defaultShuffleSize = 100
+	defaultShuffleSize = 200
 )
 
 type shuffleStage[R any] struct {
