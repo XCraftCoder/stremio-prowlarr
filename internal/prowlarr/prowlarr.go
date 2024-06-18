@@ -81,6 +81,33 @@ func (j *Prowlarr) SearchMovieTorrents(indexer *Indexer, name string) ([]*Torren
 	return result, nil
 }
 
+func (j *Prowlarr) SearchSeasonTorrents(indexer *Indexer, name string, season int) ([]*Torrent, error) {
+	result := []*Torrent{}
+	resp, err := j.client.
+		R().
+		SetQueryParam("query", fmt.Sprintf("%s S%02d", name, season)).
+		SetQueryParam("categories", tvCategory).
+		SetQueryParam("indexerIds", strconv.Itoa(indexer.ID)).
+		SetResult(&result).
+		Get("/api/v1/search")
+
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("error response from prowlarr: %v", resp.Error())
+	}
+
+	for _, torrent := range result {
+		torrent.Link = strings.Replace(torrent.Link, "http://localhost:9696", j.apiURL, 1)
+		torrent.InfoHash = strings.ToLower(torrent.InfoHash)
+		torrent.GID = generateGID(torrent.Guid)
+	}
+
+	return result, nil
+}
+
 func (j *Prowlarr) SearchSeriesTorrents(indexer *Indexer, name string) ([]*Torrent, error) {
 	result := []*Torrent{}
 	resp, err := j.client.

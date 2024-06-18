@@ -71,18 +71,19 @@ type GetStreamsResponse struct {
 }
 
 type streamRecord struct {
-	ContentType   ContentType
-	ID            string
-	Season        int
-	Episode       int
-	BaseURL       string
-	RemoteAddress string
-	MetaInfo      *model.MetaInfo
-	TitleInfo     *titleparser.MetaInfo
-	Indexer       *prowlarr.Indexer
-	Torrent       *prowlarr.Torrent
-	Files         []*realdebrid.File
-	MediaFile     *realdebrid.File
+	ContentType    ContentType
+	ID             string
+	Season         int
+	Episode        int
+	BaseURL        string
+	RemoteAddress  string
+	MetaInfo       *model.MetaInfo
+	TitleInfo      *titleparser.MetaInfo
+	Indexer        *prowlarr.Indexer
+	Torrent        *prowlarr.Torrent
+	Files          []*realdebrid.File
+	MediaFile      *realdebrid.File
+	SearchBySeason bool
 }
 
 const (
@@ -170,6 +171,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 
 	p.Map(add.fetchMetaInfo)
 	p.FanOut(add.fanOutToAllIndexers)
+	p.FanOut(includeSearchBySeason)
 	p.FanOut(add.searchForTorrents)
 	p.Map(add.parseTorrentTitle)
 	p.Filter(excludeTorrents)
@@ -269,7 +271,11 @@ func (add *Addon) searchForTorrents(r *streamRecord) ([]*streamRecord, error) {
 	case ContentTypeMovie:
 		torrents, err = add.prowlarrClient.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
 	case ContentTypeSeries:
-		torrents, err = add.prowlarrClient.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name)
+		if r.SearchBySeason {
+			torrents, err = add.prowlarrClient.SearchSeasonTorrents(r.Indexer, r.MetaInfo.Name, r.Season)
+		} else {
+			torrents, err = add.prowlarrClient.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name)
+		}
 	}
 
 	if err != nil {
@@ -406,6 +412,19 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 	return nil, nil
 }
 
+func includeSearchBySeason(r *streamRecord) ([]*streamRecord, error) {
+	if r.ContentType == ContentTypeSeries {
+		newR := *r
+		newR.SearchBySeason = true
+		return []*streamRecord{
+			&newR,
+			r,
+		}, nil
+	}
+
+	return []*streamRecord{r}, nil
+}
+
 func deduplicateTorrent() func(r *streamRecord) bool {
 	found := &sync.Map{}
 	return func(r *streamRecord) bool {
@@ -472,15 +491,15 @@ func excludeTorrents(r *streamRecord) bool {
 	seasonOK := r.ContentType != ContentTypeSeries || (r.TitleInfo.Season == 0 || r.TitleInfo.Season == r.Season)
 	episodeOK := r.ContentType != ContentTypeSeries || (r.TitleInfo.Episode == 0 || r.TitleInfo.Episode == r.Episode)
 	result := qualityOK && imdbOK && yearOK && seasonOK && episodeOK
-	if !result {
-		log.Infof("Excluded %s, quality: %v, imdb: %v, year: %v, season: %v, episode: %v",
-			r.Torrent.Title,
-			qualityOK,
-			imdbOK, yearOK,
-			seasonOK,
-			episodeOK,
-		)
-	}
+	// if !result {
+	// 	log.Infof("Excluded %s, quality: %v, imdb: %v, year: %v, season: %v, episode: %v",
+	// 		r.Torrent.Title,
+	// 		qualityOK,
+	// 		imdbOK, yearOK,
+	// 		seasonOK,
+	// 		episodeOK,
+	// 	)
+	// }
 	return result
 }
 
@@ -517,14 +536,6 @@ func hasHigherQuality(r1, r2 *streamRecord) bool {
 }
 
 func cmpLowerQuality(r1, r2 *streamRecord) int {
-	if r1.Torrent.Imdb > 0 && r2.Torrent.Imdb == 0 {
-		return -1
-	}
-
-	if r1.Torrent.Imdb == 0 && r2.Torrent.Imdb > 0 {
-		return 1
-	}
-
 	if r1.TitleInfo.Resolution > r2.TitleInfo.Resolution {
 		return -1
 	}
