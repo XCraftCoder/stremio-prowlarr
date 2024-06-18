@@ -398,14 +398,18 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 	case ContentTypeMovie:
 		r.MediaFile = findMovieMediaFile(r.Files)
 	case ContentTypeSeries:
-		r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf("S%02dE%02d", r.Season, r.Episode))
+		r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`S%02dE%02d`, r.Season, r.Episode))
 
 		if r.MediaFile == nil {
-			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf("%d%02d", r.Season, r.Episode))
+			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`\b%dx%02d\b`, r.Season, r.Episode))
 		}
 
 		if r.MediaFile == nil {
-			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf("%d", r.Episode))
+			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`(?i)\bS?%02d\b.+\bE?%02d\b`, r.Season, r.Episode))
+		}
+
+		if r.MediaFile == nil {
+			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`\b%d\b`, r.Episode))
 		}
 	}
 
@@ -413,7 +417,10 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 		return []*streamRecord{r}, nil
 	}
 
-	log.Infof("Couldn't locate media file: %s, %v", r.Torrent.Title, r.Files)
+	log.Infof("Couldn't locate media file: %s", r.Torrent.Title)
+	// for _, f := range r.Files {
+	// 	log.Infof("File %s", f.FileName)
+	// }
 	return nil, nil
 }
 
@@ -447,10 +454,11 @@ func deduplicateTorrent() func(r *streamRecord) bool {
 	}
 }
 
-func findEpisodeMediaFile(files []*realdebrid.File, text string) *realdebrid.File {
+func findEpisodeMediaFile(files []*realdebrid.File, pattern string) *realdebrid.File {
 	var mediaFile *realdebrid.File
+	compiled := regexp.MustCompile(pattern)
 	for _, f := range files {
-		if !hasMediaExtension(f.FileName) || !strings.Contains(f.FileName, text) {
+		if !hasMediaExtension(f.FileName) || !compiled.MatchString(f.FileName) {
 			continue
 		}
 
@@ -498,17 +506,15 @@ func excludeTorrents(r *streamRecord) bool {
 	episodeOK := r.ContentType != ContentTypeSeries || (r.TitleInfo.Episode == 0 || r.TitleInfo.Episode == r.Episode)
 	result := qualityOK && imdbOK && yearOK && seasonOK && episodeOK && titleOK
 	// if !result {
-	// 	log.Infof("Excluded %s, quality: %v, imdb: %v, year: %v, season: %v, episode: %v",
+	// 	log.Infof("Excluded %s, quality: %v, imdb: %v, year: %v, season: %v, episode: %v, title: %v",
 	// 		r.Torrent.Title,
 	// 		qualityOK,
 	// 		imdbOK, yearOK,
 	// 		seasonOK,
 	// 		episodeOK,
+	// 		titleOK,
 	// 	)
 	// }
-	if imdbOK && !titleOK {
-		log.Infof("Exclude %s, name: %s, diff: %f", r.Torrent.Title, r.TitleInfo.Title, checkTitleSimilarity(r.MetaInfo.Name, r.TitleInfo.Title))
-	}
 	return result
 }
 
