@@ -3,7 +3,7 @@ package titleparser_test
 import (
 	"testing"
 
-	"github.com/bongnv/jackett-stremio/internal/titleparser"
+	"github.com/bongnv/prowlarr-stremio/internal/titleparser"
 	"github.com/stretchr/testify/require"
 )
 

@@ -1,8 +1,8 @@
 package addon
 
 import (
-	"github.com/bongnv/jackett-stremio/internal/debrid/realdebrid"
-	"github.com/bongnv/jackett-stremio/internal/jackett"
+	"github.com/bongnv/prowlarr-stremio/internal/debrid/realdebrid"
+	"github.com/bongnv/prowlarr-stremio/internal/prowlarr"
 )
 
 func WithID(id string) Option {
@@ -17,9 +17,9 @@ func WithName(name string) Option {
 	}
 }
 
-func WithJackett(jacketUrl string, jacketApiKey string) Option {
+func WithProwlarr(jacketUrl string, jacketApiKey string) Option {
 	return func(a *Addon) {
-		a.jackettClient = jackett.New(jacketUrl, jacketApiKey)
+		a.prowlarrClient = prowlarr.New(jacketUrl, jacketApiKey)
 	}
 }
 

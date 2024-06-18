@@ -1,4 +1,4 @@
-package jackett
+package prowlarr
 
 import (
 	"encoding/base32"

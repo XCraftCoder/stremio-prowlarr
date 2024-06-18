@@ -1,4 +1,4 @@
-package jackett
+package prowlarr
 
 import (
 	"encoding/hex"
@@ -6,36 +6,32 @@ import (
 
 type TorrentID []byte
 
-type IndexersResponse struct {
-	Indexers []Indexer `xml:"indexer"`
-}
-
 type Indexer struct {
-	ID    string `xml:"id,attr"`
-	Title string `xml:"title"`
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	SortName string `json:"sortName"`
+	Enable   bool   `json:"enable"`
 }
 
 type Torrent struct {
 	GID       TorrentID
-	Title     string   `json:"Title"`
-	Guid      string   `json:"Guid"`
-	Seeders   uint     `json:"Seeders"`
-	Size      uint     `json:"Size"`
-	Imdb      uint     `json:"Imdb"`
+	ID        int      `json:"id"`
+	Title     string   `json:"title"`
+	FileName  string   `json:"fileName"`
+	Guid      string   `json:"guid"`
+	Seeders   uint     `json:"seeders"`
+	Size      uint     `json:"size"`
+	Imdb      uint     `json:"imdbId"`
 	TMDb      uint     `json:"TMDb"`
 	TVDBId    uint     `json:"TVDBId"`
-	Link      string   `json:"Link"`
-	MagnetUri string   `json:"MagnetUri"`
-	InfoHash  string   `json:"InfoHash"`
+	Link      string   `json:"downloadUrl"`
+	MagnetUri string   `json:"magnetUrl"`
+	InfoHash  string   `json:"infoHash"`
 	Year      uint     `json:"Year"`
 	Languages []string `json:"Languages"`
 	Subs      []string `json:"Subs"`
 	Peers     uint     `json:"Peers"`
-	Files     uint     `json:"Files"`
-}
-
-type TorrentsResponse struct {
-	Torrents []Torrent `json:"Results"`
+	Files     uint     `json:"files"`
 }
 
 type RSSItem struct {

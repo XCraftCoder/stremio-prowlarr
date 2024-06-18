@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bongnv/jackett-stremio/internal/model"
+	"github.com/bongnv/prowlarr-stremio/internal/model"
 	"github.com/go-resty/resty/v2"
 )
 

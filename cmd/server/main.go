@@ -9,12 +9,12 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	_ "github.com/joho/godotenv/autoload"
 
-	"github.com/bongnv/jackett-stremio/internal/addon"
+	"github.com/bongnv/prowlarr-stremio/internal/addon"
 )
 
 type config struct {
-	JackettURL         string `env:"JACKETT_URL"`
-	JackettAPIKey      string `env:"JACKETT_API_KEY"`
+	ProwlarrURL        string `env:"PROWLARR_URL"`
+	ProwlarrAPIKey     string `env:"PROWLARR_API_KEY"`
 	RealDebridAPIToken string `env:"REAL_DEBRID_API_TOKEN"`
 }
 
@@ -30,9 +30,9 @@ func main() {
 	app.Use(logger.New())
 
 	add := addon.New(
-		addon.WithID("stremio.addon.jackett"),
-		addon.WithName("Jackett"),
-		addon.WithJackett(cfg.JackettURL, cfg.JackettAPIKey),
+		addon.WithID("stremio.addon.prowlarr"),
+		addon.WithName("Prowlarr"),
+		addon.WithProwlarr(cfg.ProwlarrURL, cfg.ProwlarrAPIKey),
 		addon.WithRealDebrid(cfg.RealDebridAPIToken),
 	)
 

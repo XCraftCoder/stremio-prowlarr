@@ -11,12 +11,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bongnv/jackett-stremio/internal/cinemeta"
-	"github.com/bongnv/jackett-stremio/internal/debrid/realdebrid"
-	"github.com/bongnv/jackett-stremio/internal/jackett"
-	"github.com/bongnv/jackett-stremio/internal/model"
-	"github.com/bongnv/jackett-stremio/internal/pipe"
-	"github.com/bongnv/jackett-stremio/internal/titleparser"
+	"github.com/bongnv/prowlarr-stremio/internal/cinemeta"
+	"github.com/bongnv/prowlarr-stremio/internal/debrid/realdebrid"
+	"github.com/bongnv/prowlarr-stremio/internal/model"
+	"github.com/bongnv/prowlarr-stremio/internal/pipe"
+	"github.com/bongnv/prowlarr-stremio/internal/prowlarr"
+	"github.com/bongnv/prowlarr-stremio/internal/titleparser"
 	"github.com/coocood/freecache"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/log"
@@ -59,7 +59,7 @@ type Addon struct {
 	description string
 
 	cinemetaClient *cinemeta.CineMeta
-	jackettClient  *jackett.Jackett
+	prowlarrClient *prowlarr.Prowlarr
 	realDebrid     *realdebrid.RealDebrid
 	cache          *freecache.Cache
 }
@@ -79,8 +79,8 @@ type streamRecord struct {
 	RemoteAddress string
 	MetaInfo      *model.MetaInfo
 	TitleInfo     *titleparser.MetaInfo
-	Indexer       jackett.Indexer
-	Torrent       jackett.Torrent
+	Indexer       *prowlarr.Indexer
+	Torrent       *prowlarr.Torrent
 	Files         []*realdebrid.File
 	MediaFile     *realdebrid.File
 }
@@ -102,8 +102,8 @@ func New(opts ...Option) *Addon {
 		opt(addon)
 	}
 
-	if addon.jackettClient == nil {
-		panic("jackett client must be provided")
+	if addon.prowlarrClient == nil {
+		panic("prowlarr client must be provided")
 	}
 
 	if addon.realDebrid == nil {
@@ -137,7 +137,7 @@ func (add *Addon) HandleGetManifest(c *fiber.Ctx) error {
 func (add *Addon) HandleDownload(c *fiber.Ctx) error {
 	torrentID := strings.ToLower(c.Params("torrentID"))
 	fileID := strings.ToLower(c.Params("fileID"))
-	rawTorrentID, err := jackett.TorrentIDFromString(torrentID)
+	rawTorrentID, err := prowlarr.TorrentIDFromString(torrentID)
 	if err != nil {
 		log.Errorf("Invalid torrent ID %s, err: %v", torrentID, err)
 		return err
@@ -149,7 +149,7 @@ func (add *Addon) HandleDownload(c *fiber.Ctx) error {
 		return err
 	}
 
-	magnet, err := jackett.ParseMagnetUri(string(magnetURI))
+	magnet, err := prowlarr.ParseMagnetUri(string(magnetURI))
 	if err != nil {
 		log.WithContext(c.Context()).Errorf("Couldn't parse the magnet URI for %s: %v", torrentID, err)
 		return err
@@ -185,7 +185,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	for _, r := range records {
 		results = append(results, StreamItem{
 			Name:  fmt.Sprintf("[%dp]", r.TitleInfo.Resolution),
-			Title: fmt.Sprintf("%s\n%s\n%d|%d|%s", r.Torrent.Title, r.MediaFile.FileName, r.MediaFile.FileSize, r.Torrent.Seeders, r.Indexer.Title),
+			Title: fmt.Sprintf("%s\n%s\n%d|%d|%s", r.Torrent.Title, r.MediaFile.FileName, r.MediaFile.FileSize, r.Torrent.Seeders, r.Indexer.Name),
 			URL:   r.BaseURL + compiled.ReplaceAllString(c.Path(), "/download/"+r.Torrent.GID.ToString()+"/"+r.MediaFile.ID),
 		})
 	}
@@ -246,7 +246,7 @@ func (add *Addon) fetchMetaInfo(r *streamRecord) (*streamRecord, error) {
 }
 
 func (add *Addon) fanOutToAllIndexers(r *streamRecord) ([]*streamRecord, error) {
-	allIndexers, err := add.jackettClient.GetAllIndexers()
+	allIndexers, err := add.prowlarrClient.GetAllIndexers()
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load all indexers: %v", err)
 	}
@@ -262,17 +262,18 @@ func (add *Addon) fanOutToAllIndexers(r *streamRecord) ([]*streamRecord, error) 
 }
 
 func (add *Addon) searchForTorrents(r *streamRecord) ([]*streamRecord, error) {
-	torrents := []jackett.Torrent{}
+	torrents := []*prowlarr.Torrent{}
 	var err error
+
 	switch r.ContentType {
 	case ContentTypeMovie:
-		torrents, err = add.jackettClient.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
+		torrents, err = add.prowlarrClient.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
 	case ContentTypeSeries:
-		torrents, err = add.jackettClient.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name)
+		torrents, err = add.prowlarrClient.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name)
 	}
 
 	if err != nil {
-		log.Errorf("Failed to load torrents for %s in %s, due to: %v", r.MetaInfo.Name, r.Indexer.ID, err)
+		log.Errorf("Failed to load torrents for %s in %s, due to: %v", r.MetaInfo.Name, r.Indexer.Name, err)
 		return nil, nil
 	}
 
@@ -283,7 +284,7 @@ func (add *Addon) searchForTorrents(r *streamRecord) ([]*streamRecord, error) {
 		records = append(records, &newRecord)
 	}
 
-	log.Infof("Found %d from %s", len(records), r.Indexer.ID)
+	log.Infof("Found %d from %s", len(records), r.Indexer.Name)
 	return records, nil
 }
 
@@ -297,7 +298,7 @@ func (add *Addon) enrichInfoHash(r *streamRecord) ([]*streamRecord, error) {
 		}
 	}
 
-	r.Torrent, err = add.jackettClient.FetchMagnetURI(r.Torrent)
+	r.Torrent, err = add.prowlarrClient.FetchMagnetURI(r.Torrent)
 	if err != nil {
 		log.Errorf("Failed to fetch magnetUri for %s due to: %v", r.Torrent.Guid, err)
 		return nil, nil
@@ -516,6 +517,14 @@ func hasHigherQuality(r1, r2 *streamRecord) bool {
 }
 
 func cmpLowerQuality(r1, r2 *streamRecord) int {
+	if r1.Torrent.Imdb > 0 && r2.Torrent.Imdb == 0 {
+		return -1
+	}
+
+	if r1.Torrent.Imdb == 0 && r2.Torrent.Imdb > 0 {
+		return 1
+	}
+
 	if r1.TitleInfo.Resolution > r2.TitleInfo.Resolution {
 		return -1
 	}

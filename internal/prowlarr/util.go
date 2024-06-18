@@ -1,4 +1,4 @@
-package jackett
+package prowlarr
 
 import (
 	"net/http"

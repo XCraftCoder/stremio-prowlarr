@@ -1,5 +1,5 @@
-# jackett-stremio
-A StremIO addon for Jackett
+# prowlarr-stremio
+A StremIO addon for Prowlarr
 
 ## TODO
 

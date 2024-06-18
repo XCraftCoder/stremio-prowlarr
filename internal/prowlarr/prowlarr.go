@@ -1,4 +1,4 @@
-package jackett
+package prowlarr
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/go-resty/resty/v2"
@@ -17,97 +18,97 @@ const (
 	tvCategory     = "5000"
 )
 
-type Jackett struct {
+type Prowlarr struct {
 	client *resty.Client
 	apiURL string
 }
 
-func New(apiURL string, apiKey string) *Jackett {
+func New(apiURL string, apiKey string) *Prowlarr {
 	client := resty.New().
 		// SetDebug(true).
 		SetBaseURL(apiURL).
-		SetQueryParam("apikey", apiKey).
+		SetHeader("X-Api-Key", apiKey).
 		SetRedirectPolicy(NotFollowMagnet())
 
-	return &Jackett{
+	return &Prowlarr{
 		client: client,
 		apiURL: apiURL,
 	}
 }
 
-func (j *Jackett) GetAllIndexers() ([]Indexer, error) {
-	result := &IndexersResponse{}
+func (j *Prowlarr) GetAllIndexers() ([]*Indexer, error) {
+	result := []*Indexer{}
 	resp, err := j.client.
 		R().
-		SetQueryParam("t", "indexers").
-		SetQueryParam("configured", "true").
-		SetResult(result).
-		Get("/api/v2.0/indexers/all/results/torznab/api")
+		SetResult(&result).
+		Get("/api/v1/indexer")
 
 	if err != nil {
 		return nil, err
 	}
 
 	if resp.IsError() {
-		return nil, fmt.Errorf("error response from jackett: %v", resp.Error())
+		return nil, fmt.Errorf("error response from prowlarr: %v", resp.Error())
 	}
 
-	return result.Indexers, nil
+	return result, nil
 }
 
-func (j *Jackett) SearchMovieTorrents(indexer Indexer, name string) ([]Torrent, error) {
-	result := &TorrentsResponse{}
-	resp, err := j.client.
-		R().
-		SetQueryParam("query", name).
-		SetQueryParam("category", moviesCategory).
-		SetResult(result).
-		Get("api/v2.0/indexers/" + indexer.ID + "/results")
-
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.IsError() {
-		return nil, fmt.Errorf("error response from jackett: %v", resp.Error())
-	}
-
-	for i := range result.Torrents {
-		result.Torrents[i].Link = strings.Replace(result.Torrents[i].Link, "http://localhost:9117", j.apiURL, 1)
-		result.Torrents[i].InfoHash = strings.ToLower(result.Torrents[i].InfoHash)
-		result.Torrents[i].GID = generateGID(result.Torrents[i].Guid)
-	}
-
-	return result.Torrents, nil
-}
-
-func (j *Jackett) SearchSeriesTorrents(indexer Indexer, name string) ([]Torrent, error) {
-	result := &TorrentsResponse{}
+func (j *Prowlarr) SearchMovieTorrents(indexer *Indexer, name string) ([]*Torrent, error) {
+	result := []*Torrent{}
 	resp, err := j.client.
 		R().
 		SetQueryParam("query", name).
-		SetQueryParam("category", tvCategory).
-		SetResult(result).
-		Get("api/v2.0/indexers/" + indexer.ID + "/results")
+		SetQueryParam("categories", moviesCategory).
+		SetQueryParam("indexerIds", strconv.Itoa(indexer.ID)).
+		SetResult(&result).
+		Get("/api/v1/search")
 
 	if err != nil {
 		return nil, err
 	}
 
 	if resp.IsError() {
-		return nil, fmt.Errorf("error response from jackett: %v", resp.Error())
+		return nil, fmt.Errorf("error response from prowlarr: %v", resp.Error())
 	}
 
-	for i := range result.Torrents {
-		result.Torrents[i].Link = strings.Replace(result.Torrents[i].Link, "http://localhost:9117", j.apiURL, 1)
-		result.Torrents[i].InfoHash = strings.ToLower(result.Torrents[i].InfoHash)
-		result.Torrents[i].GID = generateGID(result.Torrents[i].Guid)
+	for _, torrent := range result {
+		torrent.Link = strings.Replace(torrent.Link, "http://localhost:9696", j.apiURL, 1)
+		torrent.InfoHash = strings.ToLower(torrent.InfoHash)
+		torrent.GID = generateGID(torrent.Guid)
 	}
 
-	return result.Torrents, nil
+	return result, nil
 }
 
-func (j *Jackett) FetchMagnetURI(torrent Torrent) (Torrent, error) {
+func (j *Prowlarr) SearchSeriesTorrents(indexer *Indexer, name string) ([]*Torrent, error) {
+	result := []*Torrent{}
+	resp, err := j.client.
+		R().
+		SetQueryParam("query", name).
+		SetQueryParam("categories", tvCategory).
+		SetQueryParam("indexerIds", strconv.Itoa(indexer.ID)).
+		SetResult(&result).
+		Get("/api/v1/search")
+
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("error response from prowlarr: %v", resp.Error())
+	}
+
+	for _, torrent := range result {
+		torrent.Link = strings.Replace(torrent.Link, "http://localhost:9696", j.apiURL, 1)
+		torrent.InfoHash = strings.ToLower(torrent.InfoHash)
+		torrent.GID = generateGID(torrent.Guid)
+	}
+
+	return result, nil
+}
+
+func (j *Prowlarr) FetchMagnetURI(torrent *Torrent) (*Torrent, error) {
 	if torrent.MagnetUri == "" {
 		resp, err := j.client.R().Get(torrent.Link)
 		if err != nil {

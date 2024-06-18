@@ -1,4 +1,4 @@
-module github.com/bongnv/jackett-stremio
+module github.com/bongnv/prowlarr-stremio
 
 go 1.22.4
 

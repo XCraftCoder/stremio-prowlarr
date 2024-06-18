@@ -1,4 +1,4 @@
-package jackett
+package prowlarr
 
 import (
 	"crypto/sha1"
