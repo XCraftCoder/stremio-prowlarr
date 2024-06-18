@@ -42,6 +42,13 @@ services:
       - 9696:9696
     restart: unless-stopped
 
+  cloudflared: 
+    image: cloudflare/cloudflared
+    restart: unless-stopped 
+    command: tunnel run --token="${CLOUD_FLARE_TUNNEL_TOKEN}"
+    networks:
+      - prowlarr-stremio
+
 networks:
   prowlarr-stremio:
 
