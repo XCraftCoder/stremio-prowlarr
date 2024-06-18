@@ -16,6 +16,7 @@ type Sink[R any] func(*R) error
 
 type pipeStage[R any] interface {
 	process(inCh <-chan *R, outCh chan<- *R)
+	bufSize() int
 }
 
 func New[R any](source Source[R]) *Pipe[R] {
@@ -53,10 +54,15 @@ func (p *Pipe[R]) FanOut(fn func(r *R) ([]*R, error), opts ...SimpleStageOption[
 }
 
 func (p *Pipe[R]) Sink(sink Sink[R]) error {
-	outCh := p.startSource()
-	for _, stage := range p.stages {
-		outCh = p.startStage(stage, outCh)
+	outCh := make(chan *R, p.getBufSize(0))
+	go p.startSource(outCh)
+
+	for i, stage := range p.stages {
+		inCh := outCh
+		outCh = make(chan *R, p.getBufSize(i+1))
+		go stage.process(inCh, outCh)
 	}
+
 	p.startSink(sink, outCh)
 	<-p.stopped
 	return <-p.errCh
@@ -111,30 +117,15 @@ func (p *Pipe[R]) Filter(fn func(r *R) bool, opts ...SimpleStageOption[R]) {
 	}, opts...)
 }
 
-func (p *Pipe[R]) startSource() <-chan *R {
-	outCh := make(chan *R)
+func (p *Pipe[R]) startSource(outCh chan<- *R) {
+	defer close(outCh)
+	records, err := p.source()
+	if err != nil {
+		p.reportError(err)
+		return
+	}
 
-	go func() {
-		defer close(outCh)
-		records, err := p.source()
-		if err != nil {
-			p.reportError(err)
-			return
-		}
-
-		sendRecords(records, outCh, p.stopped)
-	}()
-
-	return outCh
-}
-
-func (p *Pipe[R]) startStage(stage pipeStage[R], inCh <-chan *R) <-chan *R {
-	outCh := make(chan *R)
-	go func() {
-		defer close(outCh)
-		stage.process(inCh, outCh)
-	}()
-	return outCh
+	sendRecords(records, outCh, p.stopped)
 }
 
 func (p *Pipe[R]) startSink(sink Sink[R], inCh <-chan *R) {
@@ -156,4 +147,12 @@ func (p *Pipe[R]) reportError(err error) {
 		p.Stop()
 	default:
 	}
+}
+
+func (p *Pipe[R]) getBufSize(index int) int {
+	if index >= len(p.stages) {
+		return 0
+	}
+
+	return p.stages[index].bufSize()
 }

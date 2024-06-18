@@ -12,6 +12,8 @@ type simpleStage[R any] struct {
 type SimpleStageOption[R any] func(p *simpleStage[R])
 
 func (s *simpleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
+	defer close(outCh)
+
 	wg := &sync.WaitGroup{}
 	for i := 0; i < s.concurrency; i++ {
 		wg.Add(1)
@@ -29,4 +31,8 @@ func (s *simpleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 		}()
 	}
 	wg.Wait()
+}
+
+func (s *simpleStage[R]) bufSize() int {
+	return 0
 }

@@ -25,6 +25,8 @@ func WorkerSize[R any](workerSize int) BatchStageOption[R] {
 }
 
 func (s *batchStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
+	defer close(outCh)
+
 	wg := &sync.WaitGroup{}
 	for i := 0; i < s.workerSize; i++ {
 		wg.Add(1)
@@ -115,4 +117,8 @@ func (s *batchStage[R]) processNextBatch(r *R, inCh <-chan *R) {
 			}
 		}
 	}
+}
+
+func (s *batchStage[R]) bufSize() int {
+	return 5
 }

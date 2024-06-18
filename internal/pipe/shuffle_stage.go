@@ -14,6 +14,8 @@ type shuffleStage[R any] struct {
 }
 
 func (s *shuffleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
+	defer close(outCh)
+
 	shouldDrain := false
 	for {
 		if len(s.queue.data) == cap(s.queue.data) || (shouldDrain && s.queue.Len() > 0) {
@@ -63,6 +65,10 @@ func (s *shuffleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 			}
 		}
 	}
+}
+
+func (s *shuffleStage[R]) bufSize() int {
+	return 10
 }
 
 type priorityQueue[R any] struct {
