@@ -22,7 +22,7 @@ type RealDebrid struct {
 type File struct {
 	ID       string
 	FileName string `json:"filename"`
-	FileSize int    `json:"filesize"`
+	FileSize uint64 `json:"filesize"`
 }
 
 type AddMagnetResponse struct {

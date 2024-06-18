@@ -3,8 +3,6 @@ package titleparser_test
 import (
 	"testing"
 
-	"github.com/adrg/strutil"
-	"github.com/adrg/strutil/metrics"
 	"github.com/bongnv/prowlarr-stremio/internal/titleparser"
 	"github.com/stretchr/testify/require"
 )
@@ -40,5 +38,12 @@ func TestParse(t *testing.T) {
 	t.Logf("Info: %v", metaInfo)
 	require.Equal(t, 2, metaInfo.FromSeason)
 
-	t.Logf("Diff: %f", strutil.Similarity("House", "Winter House", metrics.NewLevenshtein()))
+	metaInfo = titleparser.Parse("House.S02.1080p.BluRay.REMUX.AVC.DTS.5.1-NOGRP")
+	t.Logf("Info: %v", metaInfo)
+	require.Equal(t, 2, metaInfo.FromSeason)
+	require.Equal(t, "brremux", metaInfo.Quality)
+
+	metaInfo = titleparser.Parse("House.Season-02.DvDrip.Xvid.Aquintesce")
+	t.Logf("Info: %v", metaInfo)
+	require.Equal(t, 2, metaInfo.FromSeason)
 }

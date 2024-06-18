@@ -8,7 +8,7 @@ import (
 
 var (
 	parsers = []func(string, *MetaInfo) int{
-		parseYear(`\b(((?:19[0-9]|20[0-9])[0-9]))\b`),
+		parseYear(`(?:\b((?:19[0-9]|20[0-9])[0-9])\b)|(?:\(((?:19[0-9]|20[0-9])[0-9])\))`),
 		parseResolution(`(?i)([0-9]{3,4})[pi]`),
 		matchAndSetResolution(`(?i)(4k)`, 2160),
 		parseQuality(`\b(?:HD-?)?CAM\b`),
@@ -24,7 +24,7 @@ var (
 		parseQuality(`(?i)\bPPVRip\b`),
 		parseQuality(`(?i)\bR5\b`),
 		parseQuality(`(?i)\bVHSSCR\b`),
-		matchAndSetQuality(`(?i)\bBlu-?ray Remux\b`, "brremux"),
+		matchAndSetQuality(`(?i)\bBlu-?ray[\s\.]Remux\b`, "brremux"),
 		matchAndSetQuality(`(?i)\bBlu-?ray\b`, "bluray"),
 		parseQuality(`(?i)\bWEB-?DL\b`),
 		parseQuality(`(?i)\bWEB-?Rip\b`),
@@ -41,7 +41,8 @@ var (
 		parse3D(`(?i)\b((3D))\b`),
 		parseSeasonAndEpisode(`(?i)S(\d{2})-?E(\d{2})`),
 		parseMultiSeason(`(?i)S(\d{2})\s(?:to|-)\sS(\d{2})`),
-		parseSingleSeason(`(?i)[\s.]s(\d{2})[\s.]`),
+		parseSingleSeason(`(?i)\bs(\d{2})\b`),
+		parseSingleSeason(`(?i)\bseason[- ]?(\d{2})\b`),
 		parseLanguage(`\bFR(?:ENCH)?\b`),
 	}
 )
@@ -86,7 +87,7 @@ func findValue(value *string, title string, regex *regexp.Regexp) int {
 	matches := regex.FindAllStringIndex(title, -1)
 	if len(matches) > 0 {
 		loc := matches[len(matches)-1]
-		*value = strings.ToLower(title[loc[0]:loc[1]])
+		*value = strings.ToLower(title[loc[len(loc)-2]:loc[len(loc)-1]])
 		return loc[0]
 	}
 

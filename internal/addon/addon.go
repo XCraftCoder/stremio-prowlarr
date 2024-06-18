@@ -52,6 +52,8 @@ var (
 		"mov",
 		"avi",
 	}
+
+	nonWordCharacter = regexp.MustCompile(`[^a-zA-Z0-9]+`)
 )
 
 // Addon implements a Stremio addon
@@ -190,7 +192,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	for _, r := range records {
 		results = append(results, StreamItem{
 			Name:  fmt.Sprintf("[%dp]", r.TitleInfo.Resolution),
-			Title: fmt.Sprintf("%s\n%s\n%d|%d|%s", r.Torrent.Title, r.MediaFile.FileName, r.MediaFile.FileSize, r.Torrent.Seeders, r.Indexer.Name),
+			Title: fmt.Sprintf("%s\n%s\n%s|%d|%s", r.Torrent.Title, r.MediaFile.FileName, bytesConvert(r.MediaFile.FileSize), r.Torrent.Seeders, r.Indexer.Name),
 			URL:   r.BaseURL + compiled.ReplaceAllString(c.Path(), "/download/"+r.Torrent.GID.ToString()+"/"+r.MediaFile.ID),
 		})
 	}
@@ -511,7 +513,9 @@ func excludeTorrents(r *streamRecord) bool {
 }
 
 func checkTitleSimilarity(left, right string) float64 {
-	return strutil.Similarity(strings.ToLower(left), strings.ToLower(right), metrics.NewLevenshtein())
+	left = nonWordCharacter.ReplaceAllString(strings.ToLower(left), " ")
+	right = nonWordCharacter.ReplaceAllString(strings.ToLower(right), " ")
+	return strutil.Similarity(left, right, metrics.NewLevenshtein())
 }
 
 func hasMoreSeeders(r1, r2 *streamRecord) bool {
