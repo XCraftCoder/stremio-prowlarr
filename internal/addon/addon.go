@@ -27,7 +27,7 @@ import (
 const (
 	cacheSize          = 50 * 1024 * 1024 // 50MB
 	streamRecordExpiry = 10 * 60          // 10m
-	minTitleMatch      = 0.7
+	minTitleMatch      = 0.5
 )
 
 var (
