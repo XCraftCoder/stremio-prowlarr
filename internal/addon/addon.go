@@ -260,6 +260,11 @@ func (add *Addon) fanOutToAllIndexers(r *streamRecord) ([]*streamRecord, error) 
 
 	records := make([]*streamRecord, 0, len(allIndexers))
 	for _, indexer := range allIndexers {
+		if !indexer.Enable {
+			log.Infof("Skip %s as it's disabled", indexer.Name)
+			continue
+		}
+
 		newR := *r
 		newR.Indexer = indexer
 		records = append(records, &newR)
@@ -333,6 +338,7 @@ func (add *Addon) enrichWithCachedFiles(records []*streamRecord) ([]*streamRecor
 	infoHashs := make([]string, 0, len(records))
 	for _, record := range records {
 		if record.Torrent.InfoHash == "" {
+			log.Infof("Skipped %s due to missing infoHash", record.Torrent.Title)
 			continue
 		}
 
@@ -351,6 +357,8 @@ func (add *Addon) enrichWithCachedFiles(records []*streamRecord) ([]*streamRecor
 			newR := *r
 			newR.Files = files
 			cachedRecords = append(cachedRecords, &newR)
+			// } else {
+			// 	log.Infof("Skipped %s due to missing cached file", r.Torrent.Title)
 		}
 	}
 

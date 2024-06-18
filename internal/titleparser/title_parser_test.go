@@ -46,4 +46,9 @@ func TestParse(t *testing.T) {
 	metaInfo = titleparser.Parse("House.Season-02.DvDrip.Xvid.Aquintesce")
 	t.Logf("Info: %v", metaInfo)
 	require.Equal(t, 2, metaInfo.FromSeason)
+
+	metaInfo = titleparser.Parse("House (2004) S01-8 S01-S08 (1080p BluRay x265 HEVC 10bit A")
+	t.Logf("Info: %v", metaInfo)
+	require.Equal(t, 1, metaInfo.FromSeason)
+	require.Equal(t, 8, metaInfo.ToSeason)
 }

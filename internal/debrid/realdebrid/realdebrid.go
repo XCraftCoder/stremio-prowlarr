@@ -171,6 +171,9 @@ func (rd *RealDebrid) getTorrents() ([]Torrent, error) {
 	result := []Torrent{}
 	resp, err := rd.client.R().
 		SetResult(&result).
+		SetDebug(true).
+		SetQueryParam("limit", "200").
+		SetQueryParam("filter", "active").
 		Get("/torrents")
 
 	if err != nil {

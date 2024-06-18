@@ -60,6 +60,7 @@ func (j *Prowlarr) SearchMovieTorrents(indexer *Indexer, name string) ([]*Torren
 		R().
 		SetQueryParam("query", name).
 		SetQueryParam("categories", moviesCategory).
+		SetQueryParam("type", "movie").
 		SetQueryParam("indexerIds", strconv.Itoa(indexer.ID)).
 		SetResult(&result).
 		Get("/api/v1/search")
@@ -85,8 +86,9 @@ func (j *Prowlarr) SearchSeasonTorrents(indexer *Indexer, name string, season in
 	result := []*Torrent{}
 	resp, err := j.client.
 		R().
-		SetQueryParam("query", fmt.Sprintf("%s S%02d", name, season)).
+		SetQueryParam("query", fmt.Sprintf("%s{Season:%02d}", name, season)).
 		SetQueryParam("categories", tvCategory).
+		SetQueryParam("type", "tvsearch").
 		SetQueryParam("indexerIds", strconv.Itoa(indexer.ID)).
 		SetResult(&result).
 		Get("/api/v1/search")
@@ -114,6 +116,7 @@ func (j *Prowlarr) SearchSeriesTorrents(indexer *Indexer, name string) ([]*Torre
 		R().
 		SetQueryParam("query", name).
 		SetQueryParam("categories", tvCategory).
+		SetQueryParam("type", "tvsearch").
 		SetQueryParam("indexerIds", strconv.Itoa(indexer.ID)).
 		SetResult(&result).
 		Get("/api/v1/search")
