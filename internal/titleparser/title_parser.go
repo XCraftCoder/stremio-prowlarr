@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	parsers = []func(string, *MetaInfo){
+	parsers = []func(string, *MetaInfo) int{
 		parseYear(`\b(((?:19[0-9]|20[0-9])[0-9]))\b`),
 		parseResolution(`(?i)([0-9]{3,4})[pi]`),
 		matchAndSetResolution(`(?i)(4k)`, 2160),
@@ -39,7 +39,10 @@ var (
 		matchAndSetAudio(`(?i)AAC(?:[. ]?2[. ]0)?`, "aac"),
 		parseContainer(`(?i)\b(MKV|AVI|MP4)\b`),
 		parse3D(`(?i)\b((3D))\b`),
-		parseSeasonAndEpisode(`(?i)S(\d{2})E(\d{2})`),
+		parseSeasonAndEpisode(`(?i)S(\d{2})-?E(\d{2})`),
+		parseMultiSeason(`(?i)S(\d{2})\s(?:to|-)\sS(\d{2})`),
+		parseSingleSeason(`(?i)[\s.]s(\d{2})[\s.]`),
+		parseLanguage(`\bFR(?:ENCH)?\b`),
 	}
 )
 
@@ -51,165 +54,251 @@ type MetaInfo struct {
 	Audio      string
 	Container  string
 	ThreeD     bool
-	Season     int
+	FromSeason int
+	ToSeason   int
 	Episode    int
+	Title      string
+	Language   string
 }
 
 func Parse(title string) *MetaInfo {
 	m := &MetaInfo{}
+	index := len(title)
 
 	for _, parser := range parsers {
-		parser(title, m)
+		nextIndex := parser(title, m)
+		if nextIndex >= 0 && nextIndex < index {
+			index = nextIndex
+		}
 	}
+
+	m.Title = title[0:index]
+
 	return m
 }
 
-func findValue(value *string, title string, regex *regexp.Regexp) {
+func findValue(value *string, title string, regex *regexp.Regexp) int {
 	if *value != "" {
 		// don't overwrite the existing value
-		return
+		return -1
 	}
 
-	matches := regex.FindAllString(title, -1)
+	matches := regex.FindAllStringIndex(title, -1)
 	if len(matches) > 0 {
-		*value = strings.ToLower(matches[len(matches)-1])
+		loc := matches[len(matches)-1]
+		*value = strings.ToLower(title[loc[0]:loc[1]])
+		return loc[0]
 	}
+
+	return -1
 }
 
-func findAndSet(value *string, title string, regex *regexp.Regexp, target string) {
+func findSubValue(value *string, title string, regex *regexp.Regexp) int {
 	if *value != "" {
 		// don't overwrite the existing value
-		return
+		return -1
 	}
 
-	if regex.MatchString(title) {
+	matches := regex.FindAllStringSubmatchIndex(title, -1)
+	if len(matches) > 0 && len(matches[len(matches)-1]) > 3 {
+		loc := matches[len(matches)-1]
+		*value = strings.ToLower(title[loc[2]:loc[3]])
+		return loc[0]
+	}
+
+	return -1
+}
+
+func findAndSet(value *string, title string, regex *regexp.Regexp, target string) int {
+	if *value != "" {
+		// don't overwrite the existing value
+		return -1
+	}
+
+	matches := regex.FindAllStringIndex(title, -1)
+	if len(matches) > 0 {
+		loc := matches[len(matches)-1]
 		*value = target
+		return loc[0]
 	}
+
+	return -1
 }
 
-func parseYear(pattern string) func(string, *MetaInfo) {
+func parseYear(pattern string) func(string, *MetaInfo) int {
 	compiled := regexp.MustCompile(pattern)
-	return func(title string, mi *MetaInfo) {
+	return func(title string, mi *MetaInfo) int {
 		if mi.Year > 0 {
-			return
+			return -1
 		}
 
-		matches := compiled.FindAllString(title, -1)
-		if len(matches) > 0 {
-			mi.Year, _ = strconv.Atoi(matches[len(matches)-1])
+		var year string
+		index := findValue(&year, title, compiled)
+		if index != -1 {
+			mi.Year, _ = strconv.Atoi(year)
 		}
+
+		return index
 	}
 }
 
-func parseResolution(pattern string) func(string, *MetaInfo) {
+func parseResolution(pattern string) func(string, *MetaInfo) int {
 	compiled := regexp.MustCompile(pattern)
-	return func(title string, mi *MetaInfo) {
+	return func(title string, mi *MetaInfo) int {
 		if mi.Resolution > 0 {
-			return
+			return -1
 		}
 
-		matches := compiled.FindAllStringSubmatch(title, -1)
-		if len(matches) > 0 && len(matches[len(matches)-1]) > 1 {
-			mi.Resolution, _ = strconv.Atoi(matches[len(matches)-1][1])
+		var resolution string
+		index := findSubValue(&resolution, title, compiled)
+		if index != -1 {
+			mi.Resolution, _ = strconv.Atoi(resolution)
 		}
+
+		return index
 	}
 }
 
-func matchAndSetResolution(pattern string, value int) func(string, *MetaInfo) {
+func matchAndSetResolution(pattern string, value int) func(string, *MetaInfo) int {
 	compiled := regexp.MustCompile(pattern)
-	return func(title string, mi *MetaInfo) {
+	return func(title string, mi *MetaInfo) int {
 		if mi.Resolution > 0 {
-			return
+			return -1
 		}
 
-		if compiled.MatchString(title) {
+		var resolution string
+		index := findValue(&resolution, title, compiled)
+		if index != -1 {
 			mi.Resolution = value
 		}
+
+		return index
 	}
 }
 
-func parseQuality(pattern string) func(string, *MetaInfo) {
+func parseQuality(pattern string) func(string, *MetaInfo) int {
 	compiled := regexp.MustCompile(pattern)
-	return func(title string, mi *MetaInfo) {
-		findValue(&mi.Quality, title, compiled)
+	return func(title string, mi *MetaInfo) int {
+		return findValue(&mi.Quality, title, compiled)
 	}
 }
 
-func matchAndSetQuality(pattern string, value string) func(string, *MetaInfo) {
+func matchAndSetQuality(pattern string, value string) func(string, *MetaInfo) int {
 	compiled := regexp.MustCompile(pattern)
-	return func(title string, mi *MetaInfo) {
-		findAndSet(&mi.Quality, title, compiled, value)
+	return func(title string, mi *MetaInfo) int {
+		return findAndSet(&mi.Quality, title, compiled, value)
 	}
 }
 
-func parseCodec(pattern string) func(string, *MetaInfo) {
+func parseCodec(pattern string) func(string, *MetaInfo) int {
 	compiled := regexp.MustCompile(pattern)
-	return func(title string, mi *MetaInfo) {
-		findValue(&mi.Codec, title, compiled)
-		mi.Codec = strings.ReplaceAll(mi.Codec, ".", "")
-		mi.Codec = strings.ReplaceAll(mi.Codec, "-", "")
-		mi.Codec = strings.ReplaceAll(mi.Codec, " ", "")
+	return func(title string, mi *MetaInfo) int {
+		index := findValue(&mi.Codec, title, compiled)
+		if index != -1 {
+			mi.Codec = strings.ReplaceAll(mi.Codec, ".", "")
+			mi.Codec = strings.ReplaceAll(mi.Codec, "-", "")
+			mi.Codec = strings.ReplaceAll(mi.Codec, " ", "")
+		}
+		return index
 	}
 }
 
-func parseAudio(pattern string) func(string, *MetaInfo) {
+func parseAudio(pattern string) func(string, *MetaInfo) int {
 	compiled := regexp.MustCompile(pattern)
-	return func(title string, mi *MetaInfo) {
-		findValue(&mi.Audio, title, compiled)
+	return func(title string, mi *MetaInfo) int {
+		return findValue(&mi.Audio, title, compiled)
 	}
 }
 
-func matchAndSetAudio(pattern string, value string) func(string, *MetaInfo) {
+func matchAndSetAudio(pattern string, value string) func(string, *MetaInfo) int {
 	compiled := regexp.MustCompile(pattern)
-	return func(title string, mi *MetaInfo) {
-		findAndSet(&mi.Audio, title, compiled, value)
+	return func(title string, mi *MetaInfo) int {
+		return findAndSet(&mi.Audio, title, compiled, value)
 	}
 }
 
-func parseContainer(pattern string) func(string, *MetaInfo) {
+func parseContainer(pattern string) func(string, *MetaInfo) int {
 	compiled := regexp.MustCompile(pattern)
-	return func(title string, mi *MetaInfo) {
-		findValue(&mi.Container, title, compiled)
+	return func(title string, mi *MetaInfo) int {
+		return findValue(&mi.Container, title, compiled)
 	}
 }
 
-func parse3D(pattern string) func(string, *MetaInfo) {
+func parse3D(pattern string) func(string, *MetaInfo) int {
 	compiled := regexp.MustCompile(pattern)
-	return func(title string, mi *MetaInfo) {
+	return func(title string, mi *MetaInfo) int {
 		if mi.ThreeD {
-			return
+			return -1
 		}
 
-		mi.ThreeD = compiled.MatchString(title)
+		var threeD string
+		index := findValue(&threeD, title, compiled)
+		mi.ThreeD = index != -1
+		return index
 	}
 }
 
-func parseSeasonAndEpisode(pattern string) func(string, *MetaInfo) {
+func parseSeasonAndEpisode(pattern string) func(string, *MetaInfo) int {
 	compiled := regexp.MustCompile(pattern)
-	return func(title string, mi *MetaInfo) {
-		if mi.Season > 0 {
-			return
+	return func(title string, mi *MetaInfo) int {
+		if mi.FromSeason > 0 {
+			return -1
 		}
 
-		matches := compiled.FindAllStringSubmatch(title, -1)
-		if len(matches) > 0 && len(matches[len(matches)-1]) > 2 {
-			mi.Season, _ = strconv.Atoi(matches[len(matches)-1][1])
-			mi.Episode, _ = strconv.Atoi(matches[len(matches)-1][2])
+		matches := compiled.FindAllStringSubmatchIndex(title, -1)
+		if len(matches) > 0 && len(matches[len(matches)-1]) > 5 {
+			loc := matches[len(matches)-1]
+			mi.FromSeason, _ = strconv.Atoi(title[loc[2]:loc[3]])
+			mi.ToSeason = mi.FromSeason
+			mi.Episode, _ = strconv.Atoi(title[loc[4]:loc[5]])
+			return loc[0]
 		}
+
+		return -1
 	}
 }
 
-// TODO: find a way to parse season better
-// func parseSeason(pattern string) func(string, *MetaInfo) {
-// 	compiled := regexp.MustCompile(pattern)
-// 	return func(title string, mi *MetaInfo) {
-// 		if mi.Season > 0 {
-// 			return
-// 		}
+func parseMultiSeason(pattern string) func(string, *MetaInfo) int {
+	compiled := regexp.MustCompile(pattern)
+	return func(title string, mi *MetaInfo) int {
+		if mi.FromSeason > 0 {
+			return -1
+		}
 
-// 		matches := compiled.FindAllStringSubmatch(title, -1)
-// 		if len(matches) > 0 && len(matches[len(matches)-1]) > 1 {
-// 			mi.Season, _ = strconv.Atoi(matches[len(matches)-1][1])
-// 		}
-// 	}
-// }
+		matches := compiled.FindAllStringSubmatchIndex(title, -1)
+		if len(matches) > 0 && len(matches[len(matches)-1]) > 5 {
+			loc := matches[len(matches)-1]
+			mi.FromSeason, _ = strconv.Atoi(title[loc[2]:loc[3]])
+			mi.ToSeason, _ = strconv.Atoi(title[loc[4]:loc[5]])
+			return loc[0]
+		}
+
+		return -1
+	}
+}
+
+func parseSingleSeason(pattern string) func(string, *MetaInfo) int {
+	compiled := regexp.MustCompile(pattern)
+	return func(title string, mi *MetaInfo) int {
+		if mi.FromSeason > 0 {
+			return -1
+		}
+
+		matches := compiled.FindAllStringSubmatchIndex(title, -1)
+		if len(matches) > 0 && len(matches[len(matches)-1]) > 3 {
+			loc := matches[len(matches)-1]
+			mi.FromSeason, _ = strconv.Atoi(title[loc[2]:loc[3]])
+			mi.ToSeason = mi.FromSeason
+			return loc[0]
+		}
+
+		return -1
+	}
+}
+
+func parseLanguage(pattern string) func(string, *MetaInfo) int {
+	compiled := regexp.MustCompile(pattern)
+	return func(title string, mi *MetaInfo) int {
+		return findValue(&mi.Quality, title, compiled)
+	}
+}

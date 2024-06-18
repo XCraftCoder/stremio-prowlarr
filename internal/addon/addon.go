@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/adrg/strutil"
+	"github.com/adrg/strutil/metrics"
 	"github.com/bongnv/prowlarr-stremio/internal/cinemeta"
 	"github.com/bongnv/prowlarr-stremio/internal/debrid/realdebrid"
 	"github.com/bongnv/prowlarr-stremio/internal/model"
@@ -25,6 +27,7 @@ import (
 const (
 	cacheSize          = 50 * 1024 * 1024 // 50MB
 	streamRecordExpiry = 10 * 60          // 10m
+	minTitleMatch      = 0.7
 )
 
 var (
@@ -487,10 +490,11 @@ func excludeTorrents(r *streamRecord) bool {
 	qualityOK := !slices.Contains(remuxSources, r.TitleInfo.Quality) &&
 		!slices.Contains(camSources, r.TitleInfo.Quality) && !r.TitleInfo.ThreeD
 	imdbOK := (r.Torrent.Imdb == 0 || r.Torrent.Imdb == r.MetaInfo.IMDBID)
+	titleOK := (r.Torrent.Imdb > 0 || checkTitleSimilarity(r.MetaInfo.Name, r.TitleInfo.Title) > minTitleMatch)
 	yearOK := (r.TitleInfo.Year == 0 || (r.MetaInfo.FromYear <= r.TitleInfo.Year && r.MetaInfo.ToYear >= r.TitleInfo.Year))
-	seasonOK := r.ContentType != ContentTypeSeries || (r.TitleInfo.Season == 0 || r.TitleInfo.Season == r.Season)
+	seasonOK := r.ContentType != ContentTypeSeries || (r.TitleInfo.FromSeason == 0 || (r.TitleInfo.FromSeason <= r.Season && r.TitleInfo.ToSeason >= r.Season))
 	episodeOK := r.ContentType != ContentTypeSeries || (r.TitleInfo.Episode == 0 || r.TitleInfo.Episode == r.Episode)
-	result := qualityOK && imdbOK && yearOK && seasonOK && episodeOK
+	result := qualityOK && imdbOK && yearOK && seasonOK && episodeOK && titleOK
 	// if !result {
 	// 	log.Infof("Excluded %s, quality: %v, imdb: %v, year: %v, season: %v, episode: %v",
 	// 		r.Torrent.Title,
@@ -500,7 +504,14 @@ func excludeTorrents(r *streamRecord) bool {
 	// 		episodeOK,
 	// 	)
 	// }
+	if imdbOK && !titleOK {
+		log.Infof("Exclude %s, name: %s, diff: %f", r.Torrent.Title, r.TitleInfo.Title, checkTitleSimilarity(r.MetaInfo.Name, r.TitleInfo.Title))
+	}
 	return result
+}
+
+func checkTitleSimilarity(left, right string) float64 {
+	return strutil.Similarity(strings.ToLower(left), strings.ToLower(right), metrics.NewLevenshtein())
 }
 
 func hasMoreSeeders(r1, r2 *streamRecord) bool {

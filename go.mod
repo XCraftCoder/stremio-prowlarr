@@ -3,6 +3,7 @@ module github.com/bongnv/prowlarr-stremio
 go 1.22.4
 
 require (
+	github.com/adrg/strutil v0.3.1
 	github.com/caarlos0/env/v11 v11.0.1
 	github.com/coocood/freecache v1.2.4
 	github.com/go-resty/resty/v2 v2.13.1
