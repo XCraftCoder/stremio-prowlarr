@@ -1,10 +1,10 @@
 package addon
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"path"
 	"regexp"
 	"slices"
@@ -30,6 +30,7 @@ const (
 	streamRecordExpiry = 10 * 60          // 10m
 	downloadURLExpiry  = 5 * 60
 	minTitleMatch      = 0.5
+	episodeFilePattern = `(?i)\bS?(%d|%02d)x?\b?E?%02d\b`
 )
 
 var (
@@ -122,7 +123,8 @@ func New(opts ...Option) *Addon {
 func (add *Addon) HandleGetManifest(c *fiber.Ctx) error {
 	_, err := parseUserData(c)
 	if err != nil {
-		return errors.New("invalid user data")
+		log.Errorf("Invalid user data, err: %v", err)
+		return c.SendStatus(fiber.StatusBadRequest)
 	}
 
 	manifest := &Manifest{
@@ -142,7 +144,7 @@ func (add *Addon) HandleGetManifest(c *fiber.Ctx) error {
 		IDPrefixes: []string{"tt"},
 		BehaviorHints: &BehaviorHints{
 			Configurable:          true,
-			ConfigurationRequired: false, // need to check how it's implemented
+			ConfigurationRequired: false, // this is weird, stremio doesn't allow to install with this configuration is on
 		},
 	}
 
@@ -185,8 +187,8 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p := pipe.New(add.sourceFromContext(c))
 
 	p.Map(add.fetchMetaInfo)
-	p.FanOut(add.fanOutToAllIndexers)
 	p.FanOut(includeSearchBySeason)
+	p.FanOut(add.fanOutToAllIndexers)
 	p.FanOut(add.searchForTorrents)
 	p.Map(add.parseTorrentTitle)
 	p.Filter(excludeTorrents)
@@ -424,11 +426,7 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 	case ContentTypeMovie:
 		r.MediaFile = findMovieMediaFile(r.Files)
 	case ContentTypeSeries:
-		r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`S%02dE%02d`, r.Season, r.Episode))
-
-		if r.MediaFile == nil {
-			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`\b%dx%02d\b`, r.Season, r.Episode))
-		}
+		r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(episodeFilePattern, r.Season, r.Season, r.Episode))
 
 		if r.MediaFile == nil {
 			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`(?i)\bS?%02d\b.+\bE?%02d\b`, r.Season, r.Episode))
@@ -437,6 +435,8 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 		if r.MediaFile == nil {
 			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`\b%d\b`, r.Episode))
 		}
+	default:
+		return nil, errors.New("invalid content type")
 	}
 
 	if r.MediaFile != nil {
@@ -617,14 +617,14 @@ func parseUserData(c *fiber.Ctx) (*UserData, error) {
 		return nil, errors.New("configuration is required")
 	}
 
-	usreDataJson, err := base64.RawURLEncoding.DecodeString(userDataRaw)
+	userDataJson, err := url.PathUnescape(userDataRaw)
 	if err != nil {
 		log.Errorf("Failed base64 decode userdata %s: %v", userDataRaw, err)
 		return nil, errors.New("invalid userData")
 	}
 
 	userData := &UserData{}
-	err = json.Unmarshal(usreDataJson, userData)
+	err = json.Unmarshal([]byte(userDataJson), userData)
 	if err != nil {
 		log.Errorf("Failed base64 decode userdata %s: %v", userDataRaw, err)
 		return nil, errors.New("invalid userData")

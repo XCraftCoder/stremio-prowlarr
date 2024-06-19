@@ -27,4 +27,5 @@ A StremIO addon for Prowlarr
 - [x] Forward IP to realdebrid
 - [ ] Different strategy to forward IP Address
 - [ ] Parse Multi Year
-
+- [ ] Cache infoHash instead of magnetURI
+- [x] Support /configure and userData

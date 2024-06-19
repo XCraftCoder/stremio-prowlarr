@@ -1,6 +1,10 @@
 package main
 
 import (
+	"os"
+	"regexp"
+	"time"
+
 	"github.com/caarlos0/env/v11"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/log"
@@ -10,6 +14,7 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 
 	"github.com/bongnv/prowlarr-stremio/internal/addon"
+	"github.com/bongnv/prowlarr-stremio/internal/static"
 )
 
 type config struct {
@@ -17,6 +22,10 @@ type config struct {
 	ProwlarrAPIKey     string `env:"PROWLARR_API_KEY"`
 	RealDebridAPIToken string `env:"REAL_DEBRID_API_TOKEN"`
 }
+
+var (
+	maskedPathPattern = regexp.MustCompile(`^/([\w%]+)/(?:configure|stream|download|manifest)`)
+)
 
 func main() {
 	cfg := config{}
@@ -27,7 +36,26 @@ func main() {
 	app.Use(recover.New(recover.Config{
 		EnableStackTrace: true,
 	}))
-	app.Use(logger.New())
+
+	app.Use(logger.New(logger.Config{
+		CustomTags: map[string]logger.LogFunc{
+			"maskedPath": func(output logger.Buffer, c *fiber.Ctx, data *logger.Data, extraParam string) (int, error) {
+				urlPath := c.Path()
+				loc := maskedPathPattern.FindStringSubmatchIndex(urlPath)
+				if len(loc) > 1 {
+					return output.WriteString(urlPath[:loc[0]+1] + "***" + urlPath[loc[1]-1:])
+				} else {
+					return output.WriteString(urlPath)
+				}
+			},
+		},
+		Format:        "${time} | ${status} | ${latency} | ${ip} | ${method} | ${maskedPath} | ${error}\n",
+		TimeFormat:    "15:04:05",
+		TimeZone:      "Local",
+		TimeInterval:  500 * time.Millisecond,
+		Output:        os.Stdout,
+		DisableColors: false,
+	}))
 
 	add := addon.New(
 		addon.WithID("stremio.addon.prowlarr"),
@@ -40,6 +68,8 @@ func main() {
 	app.Get("/:userData/stream/:type/:id.json", add.HandleGetStreams)
 	app.Get("/:userData/download/:infoHash/:fileID", add.HandleDownload)
 	app.Head("/:userData/download/:infoHash/:fileID", add.HandleDownload)
+	app.Get("/configure", static.HandleConfigure)
+	app.Get("/:userData/configure", static.HandleConfigure)
 
 	log.Fatal(app.Listen(":7000"))
 }

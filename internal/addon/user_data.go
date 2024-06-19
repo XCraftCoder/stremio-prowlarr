@@ -1,5 +1,5 @@
 package addon
 
 type UserData struct {
-	RDAPIKey string `json:"rdAPIKey"`
+	RDAPIKey string `json:"rd"`
 }
