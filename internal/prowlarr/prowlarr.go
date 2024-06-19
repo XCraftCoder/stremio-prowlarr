@@ -130,9 +130,7 @@ func (j *Prowlarr) SearchSeriesTorrents(indexer *Indexer, name string) ([]*Torre
 	}
 
 	for _, torrent := range result {
-		torrent.Link = strings.Replace(torrent.Link, "http://localhost:9696", j.apiURL, 1)
-		torrent.InfoHash = strings.ToLower(torrent.InfoHash)
-		torrent.GID = generateGID(torrent.Guid)
+		normaliseTorrent(torrent, j.apiURL)
 	}
 
 	return result, nil
@@ -185,4 +183,23 @@ func generateGID(content string) []byte {
 	h := sha1.New()
 	io.WriteString(h, content)
 	return h.Sum(nil)
+}
+
+func normaliseTorrent(tor *Torrent, prowlarURL string) {
+	tor.Link = strings.Replace(tor.Link, "http://localhost:9696", prowlarURL, 1)
+	tor.InfoHash = strings.ToLower(tor.InfoHash)
+	tor.GID = generateGID(tor.Guid)
+	if !strings.HasPrefix(tor.MagnetUri, "magnet") {
+		if tor.Link == "" {
+			tor.Link = tor.MagnetUri
+		}
+
+		if strings.HasPrefix(tor.Guid, "magnet") {
+			// ThePirateBay has magnet link in Guid
+			tor.MagnetUri = tor.Guid
+		} else if tor.MagnetUri != "" {
+			log.Errorf("Invalid magnet URI %v", tor.MagnetUri)
+			tor.MagnetUri = ""
+		}
+	}
 }

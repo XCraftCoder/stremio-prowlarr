@@ -27,6 +27,7 @@ import (
 const (
 	cacheSize          = 50 * 1024 * 1024 // 50MB
 	streamRecordExpiry = 10 * 60          // 10m
+	downloadURLExpiry  = 5 * 60
 	minTitleMatch      = 0.5
 )
 
@@ -151,25 +152,36 @@ func (add *Addon) HandleDownload(c *fiber.Ctx) error {
 		return err
 	}
 
-	magnetURI, err := add.cache.Get(rawTorrentID)
+	var downloadURL string
+	rawDownloadURL, err := add.cache.Get([]byte(torrentID + fileID))
 	if err != nil {
-		log.WithContext(c.Context()).Errorf("Couldn't find the magnet URI for %s in cache: %v", torrentID, err)
-		return err
+		magnetURI, err := add.cache.Get(rawTorrentID)
+		if err != nil {
+			log.WithContext(c.Context()).Errorf("Couldn't find the magnet URI for %s in cache: %v", torrentID, err)
+			return err
+		}
+
+		magnet, err := prowlarr.ParseMagnetUri(string(magnetURI))
+		if err != nil {
+			log.WithContext(c.Context()).Errorf("Couldn't parse the magnet URI for %s: %v", magnetURI, err)
+			return err
+		}
+
+		downloadURL, err = add.realDebrid.GetDownloadByMagnetURI(magnet.InfoHashStr(), string(magnetURI), fileID, ipAddress)
+		if err != nil {
+			log.WithContext(c.Context()).Errorf("Couldn't generate the download link for %s, %s: %v", torrentID, fileID, err)
+			return err
+		}
+
+		err = add.cache.Set([]byte(torrentID+fileID), []byte(downloadURL), downloadURLExpiry)
+		if err != nil {
+			log.WithContext(c.Context()).Warnf("Failed to cache downloadURL: %v", err)
+		}
+	} else {
+		downloadURL = string(rawDownloadURL)
 	}
 
-	magnet, err := prowlarr.ParseMagnetUri(string(magnetURI))
-	if err != nil {
-		log.WithContext(c.Context()).Errorf("Couldn't parse the magnet URI for %s: %v", torrentID, err)
-		return err
-	}
-
-	download, err := add.realDebrid.GetDownloadByMagnetURI(magnet.InfoHashStr(), string(magnetURI), fileID, ipAddress)
-	if err != nil {
-		log.WithContext(c.Context()).Errorf("Couldn't generate the download link for %s, %s: %v", torrentID, fileID, err)
-		return err
-	}
-
-	return c.Redirect(download)
+	return c.Redirect(downloadURL)
 }
 
 func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
