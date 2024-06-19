@@ -42,7 +42,7 @@ var (
 		parseSeasonAndEpisode(`(?i)S(\d{2})-?E(\d{2})`),
 		parseMultiSeason(`(?i)S(\d{2})\s*(?:to|-)\s*S(\d{2})`),
 		parseSingleSeason(`(?i)\bs(\d{2})\b`),
-		parseSingleSeason(`(?i)\bseason[- ]?(\d{2})\b`),
+		parseSingleSeason(`(?i)\bseason[- ]?(\d{1,2})\b`),
 		parseLanguage(`\bFR(?:ENCH)?\b`),
 	}
 )

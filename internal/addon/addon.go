@@ -594,11 +594,11 @@ func cmpLowerQuality(r1, r2 *streamRecord) int {
 		return 1
 	}
 
-	if r1.Torrent.Size > r2.Torrent.Size {
+	if r1.MediaFile.FileSize > r2.MediaFile.FileSize {
 		return -1
 	}
 
-	if r1.Torrent.Size < r2.Torrent.Size {
+	if r1.MediaFile.FileSize < r2.MediaFile.FileSize {
 		return 1
 	}
 

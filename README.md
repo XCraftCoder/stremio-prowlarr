@@ -26,3 +26,5 @@ A StremIO addon for Prowlarr
 - [x] Enhance stremio APIs with caching
 - [x] Forward IP to realdebrid
 - [ ] Different strategy to forward IP Address
+- [ ] Parse Multi Year
+
