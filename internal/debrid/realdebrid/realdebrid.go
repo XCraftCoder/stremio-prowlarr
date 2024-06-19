@@ -12,6 +12,7 @@ import (
 
 var (
 	ErrNoTorrentFound  = errors.New("no torrent found")
+	ErrNoFileFound     = errors.New("realdebrid: not file found")
 	ErrTorrentNotReady = errors.New("realdebrid: torrent is not ready yet")
 )
 
@@ -119,7 +120,14 @@ func (rd *RealDebrid) getDownloadByInfoHash(infoHash, fileID, ipAddress string) 
 
 	for _, torrent := range torrents {
 		if torrent.Hash == infoHash {
-			return rd.getDownload(&torrent, fileID, ipAddress)
+			download, err := rd.getDownload(&torrent, fileID, ipAddress)
+			if err == nil {
+				return download, err
+			}
+
+			if err != ErrNoFileFound {
+				return "", err
+			}
 		}
 	}
 
@@ -193,7 +201,7 @@ func (rd *RealDebrid) getTorrents() ([]Torrent, error) {
 func (rd *RealDebrid) getDownload(torrent *Torrent, fileID string, ipAddress string) (string, error) {
 	linkIndex := getIndexOfLinkForFile(torrent, fileID)
 	if torrent.Status == "waiting_files_selection" || linkIndex == -1 {
-		err := rd.selectFileToDownload(torrent.ID, fileID, ipAddress)
+		err := rd.selectFileToDownload(torrent.ID, ipAddress)
 		if err != nil {
 			return "", err
 		}
@@ -210,7 +218,11 @@ func (rd *RealDebrid) getDownload(torrent *Torrent, fileID string, ipAddress str
 	}
 
 	linkIndex = getIndexOfLinkForFile(torrent, fileID)
-	if len(torrent.Links) == 0 || linkIndex == -1 || len(torrent.Links) <= linkIndex {
+	if linkIndex == -1 {
+		return "", ErrNoFileFound
+	}
+
+	if len(torrent.Links) == 0 || len(torrent.Links) <= linkIndex {
 		log.Infof("Invalid torrent link: %d, len: %d", linkIndex, len(torrent.Links))
 		return "", errors.New("not supported")
 	}
@@ -247,9 +259,9 @@ func (rd *RealDebrid) generateDownload(hosterLink string, ipAddress string) (str
 	return result.Download, nil
 }
 
-func (rd *RealDebrid) selectFileToDownload(torrentID, fileID string, ipAddress string) error {
+func (rd *RealDebrid) selectFileToDownload(torrentID, ipAddress string) error {
 	formData := withIPAddress(map[string]string{
-		"files": fileID,
+		"files": "all",
 	}, ipAddress)
 
 	resp, err := rd.client.R().

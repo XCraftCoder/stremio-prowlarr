@@ -7,7 +7,7 @@ A StremIO addon for Prowlarr
 - [x] Use torrentID & fileID in the download link
 - [ ] Use a better algorithm to search for variants in realdebrid.GetFiles. Merge files?
 - [ ] Support uncached torrents
-- [ ] Cache redirect/download link?
+- [x] Cache redirect/download link?
 - [x] Consider buffering for better batching & shuffling. Note: Buffering didn't improve much.
 - [x] Support exclusions (Remux, CAM) ...
 - [x] Check if it matches IMDB
@@ -23,6 +23,6 @@ A StremIO addon for Prowlarr
 - [ ] Better pattern to locate files for series
 - [x] Parse season only from the torrent title
 - [ ] Merge torrent info when deduplicating
-- [ ] Enhance stremio APIs with caching
+- [x] Enhance stremio APIs with caching
 - [x] Forward IP to realdebrid
 - [ ] Different strategy to forward IP Address

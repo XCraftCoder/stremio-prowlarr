@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -208,10 +209,15 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 			Name:  fmt.Sprintf("[%dp]", r.TitleInfo.Resolution),
 			Title: fmt.Sprintf("%s\n%s\n%s|%d|%s", r.Torrent.Title, r.MediaFile.FileName, bytesConvert(r.MediaFile.FileSize), r.Torrent.Seeders, r.Indexer.Name),
 			URL:   r.BaseURL + compiled.ReplaceAllString(c.Path(), "/download/"+r.Torrent.GID.ToString()+"/"+r.MediaFile.ID),
+			BehaviorHints: &StreamBehaviorHints{
+				VideoSize:   r.MediaFile.FileSize,
+				NotWebReady: !strings.HasSuffix(strings.ToLower(r.MediaFile.FileName), ".mp4"),
+				FileName:    path.Base(r.MediaFile.FileName),
+			},
 		})
 	}
 
-	c.Response().Header.Add("Cache-control", "max-age=300, public")
+	c.Response().Header.Add("Cache-control", "max-age=300, public, stale-while-revalidate=604800, stale-if-error=604800")
 	return c.JSON(GetStreamsResponse{
 		Streams: results,
 	})
