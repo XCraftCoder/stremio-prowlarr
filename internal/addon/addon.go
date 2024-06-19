@@ -143,6 +143,8 @@ func (add *Addon) HandleGetManifest(c *fiber.Ctx) error {
 func (add *Addon) HandleDownload(c *fiber.Ctx) error {
 	torrentID := strings.ToLower(c.Params("torrentID"))
 	fileID := strings.ToLower(c.Params("fileID"))
+	ipAddress := getIPAddress(c)
+
 	rawTorrentID, err := prowlarr.TorrentIDFromString(torrentID)
 	if err != nil {
 		log.Errorf("Invalid torrent ID %s, err: %v", torrentID, err)
@@ -161,7 +163,7 @@ func (add *Addon) HandleDownload(c *fiber.Ctx) error {
 		return err
 	}
 
-	download, err := add.realDebrid.GetDownloadByMagnetURI(magnet.InfoHashStr(), string(magnetURI), fileID)
+	download, err := add.realDebrid.GetDownloadByMagnetURI(magnet.InfoHashStr(), string(magnetURI), fileID, ipAddress)
 	if err != nil {
 		log.WithContext(c.Context()).Errorf("Couldn't generate the download link for %s, %s: %v", torrentID, fileID, err)
 		return err
@@ -582,4 +584,13 @@ func cmpLowerQuality(r1, r2 *streamRecord) int {
 	}
 
 	return 0
+}
+
+func getIPAddress(c *fiber.Ctx) string {
+	ips := c.GetReqHeaders()["Cf-Connecting-Ip"]
+	if len(ips) > 0 {
+		return ips[0]
+	}
+
+	return ""
 }

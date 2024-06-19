@@ -24,3 +24,5 @@ A StremIO addon for Prowlarr
 - [x] Parse season only from the torrent title
 - [ ] Merge torrent info when deduplicating
 - [ ] Enhance stremio APIs with caching
+- [x] Forward IP to realdebrid
+- [ ] Different strategy to forward IP Address

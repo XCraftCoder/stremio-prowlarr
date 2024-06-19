@@ -88,8 +88,8 @@ func (rd *RealDebrid) GetFiles(infoHashs []string) (map[string][]*File, error) {
 	return files, nil
 }
 
-func (rd *RealDebrid) GetDownloadByMagnetURI(infoHash string, magnetURI string, fileID string) (string, error) {
-	download, err := rd.getDownloadByInfoHash(infoHash, fileID)
+func (rd *RealDebrid) GetDownloadByMagnetURI(infoHash string, magnetURI string, fileID string, ipAddress string) (string, error) {
+	download, err := rd.getDownloadByInfoHash(infoHash, fileID, ipAddress)
 	if err == nil {
 		return download, nil
 	}
@@ -98,7 +98,7 @@ func (rd *RealDebrid) GetDownloadByMagnetURI(infoHash string, magnetURI string, 
 		return "", err
 	}
 
-	torrentID, err := rd.addMagnet(magnetURI)
+	torrentID, err := rd.addMagnet(magnetURI, ipAddress)
 	if err != nil {
 		return "", err
 	}
@@ -108,10 +108,10 @@ func (rd *RealDebrid) GetDownloadByMagnetURI(infoHash string, magnetURI string, 
 		return "", err
 	}
 
-	return rd.getDownload(torrent, fileID)
+	return rd.getDownload(torrent, fileID, ipAddress)
 }
 
-func (rd *RealDebrid) getDownloadByInfoHash(infoHash, fileID string) (string, error) {
+func (rd *RealDebrid) getDownloadByInfoHash(infoHash, fileID, ipAddress string) (string, error) {
 	torrents, err := rd.getTorrents()
 	if err != nil {
 		return "", err
@@ -119,19 +119,21 @@ func (rd *RealDebrid) getDownloadByInfoHash(infoHash, fileID string) (string, er
 
 	for _, torrent := range torrents {
 		if torrent.Hash == infoHash {
-			return rd.getDownload(&torrent, fileID)
+			return rd.getDownload(&torrent, fileID, ipAddress)
 		}
 	}
 
 	return "", ErrNoTorrentFound
 }
 
-func (rd *RealDebrid) addMagnet(magnetUri string) (string, error) {
+func (rd *RealDebrid) addMagnet(magnetUri string, ipAddress string) (string, error) {
 	result := &AddMagnetResponse{}
+	formData := withIPAddress(map[string]string{
+		"magnet": magnetUri,
+	}, ipAddress)
+
 	resp, err := rd.client.R().
-		SetFormData(map[string]string{
-			"magnet": magnetUri,
-		}).
+		SetFormData(formData).
 		SetResult(result).
 		Post("/torrents/addMagnet")
 
@@ -171,7 +173,6 @@ func (rd *RealDebrid) getTorrents() ([]Torrent, error) {
 	result := []Torrent{}
 	resp, err := rd.client.R().
 		SetResult(&result).
-		SetDebug(true).
 		SetQueryParam("limit", "200").
 		SetQueryParam("filter", "active").
 		Get("/torrents")
@@ -189,10 +190,10 @@ func (rd *RealDebrid) getTorrents() ([]Torrent, error) {
 	return result, nil
 }
 
-func (rd *RealDebrid) getDownload(torrent *Torrent, fileID string) (string, error) {
+func (rd *RealDebrid) getDownload(torrent *Torrent, fileID string, ipAddress string) (string, error) {
 	linkIndex := getIndexOfLinkForFile(torrent, fileID)
 	if torrent.Status == "waiting_files_selection" || linkIndex == -1 {
-		err := rd.selectFileToDownload(torrent.ID, fileID)
+		err := rd.selectFileToDownload(torrent.ID, fileID, ipAddress)
 		if err != nil {
 			return "", err
 		}
@@ -214,7 +215,7 @@ func (rd *RealDebrid) getDownload(torrent *Torrent, fileID string) (string, erro
 		return "", errors.New("not supported")
 	}
 
-	download, err := rd.generateDownload(torrent.Links[linkIndex])
+	download, err := rd.generateDownload(torrent.Links[linkIndex], ipAddress)
 	if err != nil {
 		return "", err
 	}
@@ -222,13 +223,15 @@ func (rd *RealDebrid) getDownload(torrent *Torrent, fileID string) (string, erro
 	return download, nil
 }
 
-func (rd *RealDebrid) generateDownload(hosterLink string) (string, error) {
+func (rd *RealDebrid) generateDownload(hosterLink string, ipAddress string) (string, error) {
 	result := &UnrestrictedLinkResp{}
+	formData := withIPAddress(map[string]string{
+		"link": hosterLink,
+	}, ipAddress)
+
 	resp, err := rd.client.R().
 		SetResult(&result).
-		SetFormData(map[string]string{
-			"link": hosterLink,
-		}).
+		SetFormData(formData).
 		Post("/unrestrict/link")
 
 	if err != nil {
@@ -244,11 +247,13 @@ func (rd *RealDebrid) generateDownload(hosterLink string) (string, error) {
 	return result.Download, nil
 }
 
-func (rd *RealDebrid) selectFileToDownload(torrentID, fileID string) error {
+func (rd *RealDebrid) selectFileToDownload(torrentID, fileID string, ipAddress string) error {
+	formData := withIPAddress(map[string]string{
+		"files": fileID,
+	}, ipAddress)
+
 	resp, err := rd.client.R().
-		SetFormData(map[string]string{
-			"files": fileID,
-		}).
+		SetFormData(formData).
 		Post("/torrents/selectFiles/" + torrentID)
 	if err != nil {
 		log.Errorf("Failed to select files on Debrid, err: %v", err)
@@ -311,4 +316,12 @@ type ErrorResponse struct {
 
 func (er ErrorResponse) Error() string {
 	return fmt.Sprintf("[%s,%d]", er.ErrTxt, er.ErrorCode)
+}
+
+func withIPAddress(formData map[string]string, ipAddress string) map[string]string {
+	if ipAddress != "" {
+		formData["ip"] = ipAddress
+	}
+
+	return formData
 }
