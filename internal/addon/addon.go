@@ -43,7 +43,9 @@ var (
 	camSources = []string{
 		"telesync",
 		"cam",
+		"camrip",
 		"hdcam",
+		"tsrip",
 	}
 
 	mediaContainerExtensions = []string{
@@ -143,38 +145,20 @@ func (add *Addon) HandleGetManifest(c *fiber.Ctx) error {
 }
 
 func (add *Addon) HandleDownload(c *fiber.Ctx) error {
-	torrentID := strings.ToLower(c.Params("torrentID"))
+	infoHash := strings.ToLower(c.Params("infoHash"))
 	fileID := strings.ToLower(c.Params("fileID"))
 	ipAddress := getIPAddress(c)
 
-	rawTorrentID, err := prowlarr.TorrentIDFromString(torrentID)
-	if err != nil {
-		log.Errorf("Invalid torrent ID %s, err: %v", torrentID, err)
-		return err
-	}
-
 	var downloadURL string
-	rawDownloadURL, err := add.cache.Get([]byte(torrentID + fileID))
+	rawDownloadURL, err := add.cache.Get([]byte(infoHash + fileID))
 	if err != nil {
-		magnetURI, err := add.cache.Get(rawTorrentID)
+		downloadURL, err = add.realDebrid.GetDownloadByInfoHash(infoHash, fileID, ipAddress)
 		if err != nil {
-			log.WithContext(c.Context()).Errorf("Couldn't find the magnet URI for %s in cache: %v", torrentID, err)
+			log.WithContext(c.Context()).Errorf("Couldn't generate the download link for %s, %s: %v", infoHash, fileID, err)
 			return err
 		}
 
-		magnet, err := prowlarr.ParseMagnetUri(string(magnetURI))
-		if err != nil {
-			log.WithContext(c.Context()).Errorf("Couldn't parse the magnet URI for %s: %v", magnetURI, err)
-			return err
-		}
-
-		downloadURL, err = add.realDebrid.GetDownloadByMagnetURI(magnet.InfoHashStr(), string(magnetURI), fileID, ipAddress)
-		if err != nil {
-			log.WithContext(c.Context()).Errorf("Couldn't generate the download link for %s, %s: %v", torrentID, fileID, err)
-			return err
-		}
-
-		err = add.cache.Set([]byte(torrentID+fileID), []byte(downloadURL), downloadURLExpiry)
+		err = add.cache.Set([]byte(infoHash+fileID), []byte(downloadURL), downloadURLExpiry)
 		if err != nil {
 			log.WithContext(c.Context()).Warnf("Failed to cache downloadURL: %v", err)
 		}
@@ -208,11 +192,10 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 		results = append(results, StreamItem{
 			Name:  fmt.Sprintf("[%dp]", r.TitleInfo.Resolution),
 			Title: fmt.Sprintf("%s\n%s\n%s|%d|%s", r.Torrent.Title, r.MediaFile.FileName, bytesConvert(r.MediaFile.FileSize), r.Torrent.Seeders, r.Indexer.Name),
-			URL:   r.BaseURL + compiled.ReplaceAllString(c.Path(), "/download/"+r.Torrent.GID.ToString()+"/"+r.MediaFile.ID),
+			URL:   r.BaseURL + compiled.ReplaceAllString(c.Path(), "/download/"+r.Torrent.InfoHash+"/"+r.MediaFile.ID),
 			BehaviorHints: &StreamBehaviorHints{
-				VideoSize:   r.MediaFile.FileSize,
-				NotWebReady: !strings.HasSuffix(strings.ToLower(r.MediaFile.FileName), ".mp4"),
-				FileName:    path.Base(r.MediaFile.FileName),
+				VideoSize: r.MediaFile.FileSize,
+				FileName:  path.Base(r.MediaFile.FileName),
 			},
 		})
 	}
@@ -232,7 +215,7 @@ func (add *Addon) sourceFromContext(c *fiber.Ctx) func() ([]*streamRecord, error
 		if contentType == ContentTypeSeries {
 			tokens := strings.Split(id, "%3A")
 			if len(tokens) != 3 {
-				return nil, errors.New("invalid stream id")
+				return nil, errors.New("invalid stremio id")
 			}
 			id = tokens[0]
 			season, _ = strconv.Atoi(tokens[1])

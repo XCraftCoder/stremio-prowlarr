@@ -16,5 +16,4 @@ type StreamBehaviorHints struct {
 	FileName    string `json:"filename,omitempty"`
 	BingleGroup string `json:"bingeGroup,omitempty"`
 	VideoSize   uint64 `json:"videoSize,omitempty"`
-	NotWebReady bool   `json:"notWebReady"`
 }

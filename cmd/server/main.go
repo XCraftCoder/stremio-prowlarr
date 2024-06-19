@@ -38,8 +38,8 @@ func main() {
 
 	app.Get("/manifest.json", add.HandleGetManifest)
 	app.Get("/stream/:type/:id.json", add.HandleGetStreams)
-	app.Get("/download/:torrentID/:fileID", add.HandleDownload)
-	app.Head("/download/:torrentID/:fileID", add.HandleDownload)
+	app.Get("/download/:infoHash/:fileID", add.HandleDownload)
+	app.Head("/download/:infoHash/:fileID", add.HandleDownload)
 
 	log.Fatal(app.Listen(":7000"))
 }

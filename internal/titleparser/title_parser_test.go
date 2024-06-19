@@ -66,4 +66,12 @@ func TestParse(t *testing.T) {
 	t.Logf("Info: %v", metaInfo)
 	require.Equal(t, 1, metaInfo.FromSeason)
 	require.Equal(t, 7, metaInfo.ToSeason)
+
+	metaInfo = titleparser.Parse("Furiosa A Mad Max Saga 2024 1080p Cam X264 COLLECTIVE")
+	t.Logf("Info: %v", metaInfo)
+	require.Equal(t, "cam", metaInfo.Quality)
+
+	metaInfo = titleparser.Parse("Furiosa A Mad Max Saga (2024) 1080p CAMRip Hindi x264  1XBET")
+	t.Logf("Info: %v", metaInfo)
+	require.Equal(t, "cam", metaInfo.Quality)
 }
