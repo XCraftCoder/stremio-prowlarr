@@ -33,13 +33,13 @@ func main() {
 		addon.WithID("stremio.addon.prowlarr"),
 		addon.WithName("Prowlarr"),
 		addon.WithProwlarr(cfg.ProwlarrURL, cfg.ProwlarrAPIKey),
-		addon.WithRealDebrid(cfg.RealDebridAPIToken),
 	)
 
 	app.Get("/manifest.json", add.HandleGetManifest)
-	app.Get("/stream/:type/:id.json", add.HandleGetStreams)
-	app.Get("/download/:infoHash/:fileID", add.HandleDownload)
-	app.Head("/download/:infoHash/:fileID", add.HandleDownload)
+	app.Get("/:userData/manifest.json", add.HandleGetManifest)
+	app.Get("/:userData/stream/:type/:id.json", add.HandleGetStreams)
+	app.Get("/:userData/download/:infoHash/:fileID", add.HandleDownload)
+	app.Head("/:userData/download/:infoHash/:fileID", add.HandleDownload)
 
 	log.Fatal(app.Listen(":7000"))
 }

@@ -26,11 +26,11 @@ type Manifest struct {
 	Types    []ContentType `json:"types"`
 	Catalogs []CatalogItem `json:"catalogs,omitempty"`
 
-	IDPrefixes    []string      `json:"idPrefixes,omitempty"`
-	Background    string        `json:"background,omitempty"`
-	Logo          string        `json:"logo,omitempty"`
-	ContactEmail  string        `json:"contactEmail,omitempty"`
-	BehaviorHints BehaviorHints `json:"behaviorHints,omitempty"`
+	IDPrefixes    []string       `json:"idPrefixes,omitempty"`
+	Background    string         `json:"background,omitempty"`
+	Logo          string         `json:"logo,omitempty"`
+	ContactEmail  string         `json:"contactEmail,omitempty"`
+	BehaviorHints *BehaviorHints `json:"behaviorHints,omitempty"`
 }
 
 type ResourceItem struct {

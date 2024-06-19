@@ -1,8 +1,8 @@
 package addon
 
 import (
-	"bytes"
-	"encoding/gob"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
@@ -69,7 +69,6 @@ type Addon struct {
 
 	cinemetaClient *cinemeta.CineMeta
 	prowlarrClient *prowlarr.Prowlarr
-	realDebrid     *realdebrid.RealDebrid
 	cache          *freecache.Cache
 }
 
@@ -93,6 +92,7 @@ type streamRecord struct {
 	Files          []*realdebrid.File
 	MediaFile      *realdebrid.File
 	SearchBySeason bool
+	RDClient       *realdebrid.RealDebrid
 }
 
 const (
@@ -116,14 +116,15 @@ func New(opts ...Option) *Addon {
 		panic("prowlarr client must be provided")
 	}
 
-	if addon.realDebrid == nil {
-		panic("realdebrid client must be provided")
-	}
-
 	return addon
 }
 
 func (add *Addon) HandleGetManifest(c *fiber.Ctx) error {
+	_, err := parseUserData(c)
+	if err != nil {
+		return errors.New("invalid user data")
+	}
+
 	manifest := &Manifest{
 		ID:          add.id,
 		Name:        add.name,
@@ -139,6 +140,10 @@ func (add *Addon) HandleGetManifest(c *fiber.Ctx) error {
 		Types:      []ContentType{ContentTypeMovie, ContentTypeSeries},
 		Catalogs:   []CatalogItem{},
 		IDPrefixes: []string{"tt"},
+		BehaviorHints: &BehaviorHints{
+			Configurable:          true,
+			ConfigurationRequired: false, // need to check how it's implemented
+		},
 	}
 
 	return c.JSON(manifest)
@@ -148,17 +153,23 @@ func (add *Addon) HandleDownload(c *fiber.Ctx) error {
 	infoHash := strings.ToLower(c.Params("infoHash"))
 	fileID := strings.ToLower(c.Params("fileID"))
 	ipAddress := getIPAddress(c)
+	userData, err := parseUserData(c)
+	if err != nil {
+		return errors.New("invalid user data")
+	}
+
+	realDebrid := realdebrid.New(userData.RDAPIKey, ipAddress)
 
 	var downloadURL string
-	rawDownloadURL, err := add.cache.Get([]byte(infoHash + fileID))
+	rawDownloadURL, err := add.cache.Get([]byte(userData.RDAPIKey + infoHash + fileID))
 	if err != nil {
-		downloadURL, err = add.realDebrid.GetDownloadByInfoHash(infoHash, fileID, ipAddress)
+		downloadURL, err = realDebrid.GetDownloadByInfoHash(infoHash, fileID)
 		if err != nil {
 			log.WithContext(c.Context()).Errorf("Couldn't generate the download link for %s, %s: %v", infoHash, fileID, err)
 			return err
 		}
 
-		err = add.cache.Set([]byte(infoHash+fileID), []byte(downloadURL), downloadURLExpiry)
+		err = add.cache.Set([]byte(userData.RDAPIKey+infoHash+fileID), []byte(downloadURL), downloadURLExpiry)
 		if err != nil {
 			log.WithContext(c.Context()).Warnf("Failed to cache downloadURL: %v", err)
 		}
@@ -208,6 +219,15 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 
 func (add *Addon) sourceFromContext(c *fiber.Ctx) func() ([]*streamRecord, error) {
 	return func() ([]*streamRecord, error) {
+		ipAddress := getIPAddress(c)
+
+		userData, err := parseUserData(c)
+		if err != nil {
+			return nil, errors.New("invalid user data")
+		}
+
+		realDebrid := realdebrid.New(userData.RDAPIKey, ipAddress)
+
 		id := c.Params("id")
 		season := 0
 		episode := 0
@@ -229,6 +249,7 @@ func (add *Addon) sourceFromContext(c *fiber.Ctx) func() ([]*streamRecord, error
 			Episode:       episode,
 			BaseURL:       c.BaseURL(),
 			RemoteAddress: c.Context().RemoteIP().String(),
+			RDClient:      realDebrid,
 		}}, nil
 	}
 }
@@ -349,7 +370,7 @@ func (add *Addon) enrichWithCachedFiles(records []*streamRecord) ([]*streamRecor
 		infoHashs = append(infoHashs, record.Torrent.InfoHash)
 	}
 
-	filesByHash, err := add.realDebrid.GetFiles(infoHashs)
+	filesByHash, err := records[0].RDClient.GetFiles(infoHashs)
 	if err != nil {
 		log.Errorf("Failed to fetch files from debrid: %v", err)
 		return nil, nil
@@ -375,13 +396,6 @@ func (add *Addon) sinkResults(p *pipe.Pipe[streamRecord]) []*streamRecord {
 	err := p.Sink(func(r *streamRecord) error {
 		if len(records) == maxStreamsResult {
 			log.Info("Enough results have been collected.")
-			return nil
-		}
-
-		buf := &bytes.Buffer{}
-		err := gob.NewEncoder(buf).Encode(r)
-		if err != nil {
-			log.Errorf("Failed to encode: %v", err)
 			return nil
 		}
 
@@ -595,4 +609,26 @@ func getIPAddress(c *fiber.Ctx) string {
 	}
 
 	return ""
+}
+
+func parseUserData(c *fiber.Ctx) (*UserData, error) {
+	userDataRaw := c.Params("userData")
+	if userDataRaw == "" {
+		return nil, errors.New("configuration is required")
+	}
+
+	usreDataJson, err := base64.RawURLEncoding.DecodeString(userDataRaw)
+	if err != nil {
+		log.Errorf("Failed base64 decode userdata %s: %v", userDataRaw, err)
+		return nil, errors.New("invalid userData")
+	}
+
+	userData := &UserData{}
+	err = json.Unmarshal(usreDataJson, userData)
+	if err != nil {
+		log.Errorf("Failed base64 decode userdata %s: %v", userDataRaw, err)
+		return nil, errors.New("invalid userData")
+	}
+
+	return userData, nil
 }

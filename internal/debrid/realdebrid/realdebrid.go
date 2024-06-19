@@ -17,7 +17,8 @@ var (
 )
 
 type RealDebrid struct {
-	client *resty.Client
+	client    *resty.Client
+	ipAddress string
 }
 
 type File struct {
@@ -40,7 +41,7 @@ func (c *safeCatchedTorrentResponse) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func New(apiToken string) *RealDebrid {
+func New(apiToken string, ipAddress string) *RealDebrid {
 	client := resty.New().
 		SetBaseURL("https://api.real-debrid.com/rest/1.0").
 		SetHeader("Accept", "application/json").
@@ -48,8 +49,15 @@ func New(apiToken string) *RealDebrid {
 		SetError(ErrorResponse{}).
 		SetAuthToken(apiToken)
 
+	if ipAddress != "" {
+		client.SetFormData(map[string]string{
+			"ip": ipAddress,
+		})
+	}
+
 	return &RealDebrid{
-		client: client,
+		client:    client,
+		ipAddress: ipAddress,
 	}
 }
 
@@ -89,8 +97,8 @@ func (rd *RealDebrid) GetFiles(infoHashs []string) (map[string][]*File, error) {
 	return files, nil
 }
 
-func (rd *RealDebrid) GetDownloadByInfoHash(infoHash string, fileID string, ipAddress string) (string, error) {
-	download, err := rd.getDownloadByInfoHash(infoHash, fileID, ipAddress)
+func (rd *RealDebrid) GetDownloadByInfoHash(infoHash string, fileID string) (string, error) {
+	download, err := rd.getDownloadByInfoHash(infoHash, fileID)
 	if err == nil {
 		return download, nil
 	}
@@ -100,7 +108,7 @@ func (rd *RealDebrid) GetDownloadByInfoHash(infoHash string, fileID string, ipAd
 	}
 
 	magnetURI := "magnet:?xt=urn:btih:" + infoHash
-	torrentID, err := rd.addMagnet(magnetURI, ipAddress)
+	torrentID, err := rd.addMagnet(magnetURI)
 	if err != nil {
 		return "", err
 	}
@@ -110,11 +118,11 @@ func (rd *RealDebrid) GetDownloadByInfoHash(infoHash string, fileID string, ipAd
 		return "", err
 	}
 
-	return rd.getDownload(torrent, fileID, ipAddress)
+	return rd.getDownload(torrent, fileID)
 }
 
-func (rd *RealDebrid) GetDownloadByMagnetURI(infoHash string, magnetURI string, fileID string, ipAddress string) (string, error) {
-	download, err := rd.getDownloadByInfoHash(infoHash, fileID, ipAddress)
+func (rd *RealDebrid) GetDownloadByMagnetURI(infoHash string, magnetURI string, fileID string) (string, error) {
+	download, err := rd.getDownloadByInfoHash(infoHash, fileID)
 	if err == nil {
 		return download, nil
 	}
@@ -123,7 +131,7 @@ func (rd *RealDebrid) GetDownloadByMagnetURI(infoHash string, magnetURI string, 
 		return "", err
 	}
 
-	torrentID, err := rd.addMagnet(magnetURI, ipAddress)
+	torrentID, err := rd.addMagnet(magnetURI)
 	if err != nil {
 		return "", err
 	}
@@ -133,10 +141,10 @@ func (rd *RealDebrid) GetDownloadByMagnetURI(infoHash string, magnetURI string, 
 		return "", err
 	}
 
-	return rd.getDownload(torrent, fileID, ipAddress)
+	return rd.getDownload(torrent, fileID)
 }
 
-func (rd *RealDebrid) getDownloadByInfoHash(infoHash, fileID, ipAddress string) (string, error) {
+func (rd *RealDebrid) getDownloadByInfoHash(infoHash, fileID string) (string, error) {
 	torrents, err := rd.getTorrents()
 	if err != nil {
 		return "", err
@@ -144,7 +152,7 @@ func (rd *RealDebrid) getDownloadByInfoHash(infoHash, fileID, ipAddress string) 
 
 	for _, torrent := range torrents {
 		if torrent.Hash == infoHash {
-			download, err := rd.getDownload(&torrent, fileID, ipAddress)
+			download, err := rd.getDownload(&torrent, fileID)
 			if err == nil {
 				return download, err
 			}
@@ -158,14 +166,13 @@ func (rd *RealDebrid) getDownloadByInfoHash(infoHash, fileID, ipAddress string) 
 	return "", ErrNoTorrentFound
 }
 
-func (rd *RealDebrid) addMagnet(magnetUri string, ipAddress string) (string, error) {
+func (rd *RealDebrid) addMagnet(magnetUri string) (string, error) {
 	result := &AddMagnetResponse{}
-	formData := withIPAddress(map[string]string{
-		"magnet": magnetUri,
-	}, ipAddress)
-
 	resp, err := rd.client.R().
-		SetFormData(formData).
+		SetFormData(map[string]string{
+			"magnet": magnetUri,
+		}).
+		SetDebug(true).
 		SetResult(result).
 		Post("/torrents/addMagnet")
 
@@ -222,10 +229,10 @@ func (rd *RealDebrid) getTorrents() ([]Torrent, error) {
 	return result, nil
 }
 
-func (rd *RealDebrid) getDownload(torrent *Torrent, fileID string, ipAddress string) (string, error) {
+func (rd *RealDebrid) getDownload(torrent *Torrent, fileID string) (string, error) {
 	linkIndex := getIndexOfLinkForFile(torrent, fileID)
 	if torrent.Status == "waiting_files_selection" || linkIndex == -1 {
-		err := rd.selectFileToDownload(torrent.ID, ipAddress)
+		err := rd.selectFileToDownload(torrent.ID)
 		if err != nil {
 			return "", err
 		}
@@ -251,7 +258,7 @@ func (rd *RealDebrid) getDownload(torrent *Torrent, fileID string, ipAddress str
 		return "", errors.New("not supported")
 	}
 
-	download, err := rd.generateDownload(torrent.Links[linkIndex], ipAddress)
+	download, err := rd.generateDownload(torrent.Links[linkIndex])
 	if err != nil {
 		return "", err
 	}
@@ -259,15 +266,14 @@ func (rd *RealDebrid) getDownload(torrent *Torrent, fileID string, ipAddress str
 	return download, nil
 }
 
-func (rd *RealDebrid) generateDownload(hosterLink string, ipAddress string) (string, error) {
+func (rd *RealDebrid) generateDownload(hosterLink string) (string, error) {
 	result := &UnrestrictedLinkResp{}
-	formData := withIPAddress(map[string]string{
-		"link": hosterLink,
-	}, ipAddress)
-
 	resp, err := rd.client.R().
 		SetResult(&result).
-		SetFormData(formData).
+		SetDebug(true).
+		SetFormData(map[string]string{
+			"link": hosterLink,
+		}).
 		Post("/unrestrict/link")
 
 	if err != nil {
@@ -283,13 +289,12 @@ func (rd *RealDebrid) generateDownload(hosterLink string, ipAddress string) (str
 	return result.Download, nil
 }
 
-func (rd *RealDebrid) selectFileToDownload(torrentID, ipAddress string) error {
-	formData := withIPAddress(map[string]string{
-		"files": "all",
-	}, ipAddress)
-
+func (rd *RealDebrid) selectFileToDownload(torrentID string) error {
 	resp, err := rd.client.R().
-		SetFormData(formData).
+		SetDebug(true).
+		SetFormData(map[string]string{
+			"files": "all",
+		}).
 		Post("/torrents/selectFiles/" + torrentID)
 	if err != nil {
 		log.Errorf("Failed to select files on Debrid, err: %v", err)
@@ -352,12 +357,4 @@ type ErrorResponse struct {
 
 func (er ErrorResponse) Error() string {
 	return fmt.Sprintf("[%s,%d]", er.ErrTxt, er.ErrorCode)
-}
-
-func withIPAddress(formData map[string]string, ipAddress string) map[string]string {
-	if ipAddress != "" {
-		formData["ip"] = ipAddress
-	}
-
-	return formData
 }
