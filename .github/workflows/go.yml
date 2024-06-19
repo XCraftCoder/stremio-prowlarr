@@ -21,7 +21,5 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
       - run: go version
-      - name: Install dependencies
-        run: go get .
       - name: Test
         run: go build ./... && go test ./...
