@@ -186,7 +186,6 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p := pipe.New(add.sourceFromContext(c))
 
 	p.Map(add.fetchMetaInfo)
-	p.FanOut(includeSearchBySeason)
 	p.FanOut(add.fanOutToAllIndexers)
 	p.FanOut(add.searchForTorrents)
 	p.Map(add.parseTorrentTitle)
@@ -309,10 +308,12 @@ func (add *Addon) searchForTorrents(r *streamRecord) ([]*streamRecord, error) {
 	case ContentTypeMovie:
 		torrents, err = add.prowlarrClient.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
 	case ContentTypeSeries:
-		if r.SearchBySeason {
-			torrents, err = add.prowlarrClient.SearchSeasonTorrents(r.Indexer, r.MetaInfo.Name, r.Season)
-		} else {
-			torrents, err = add.prowlarrClient.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name)
+		torrents, err = add.prowlarrClient.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name)
+		if err == nil && len(torrents) == r.Indexer.Capabilities.LimitDefaults && r.Indexer.Capabilities.LimitDefaults > 0 {
+			seasonedTorrents, err := add.prowlarrClient.SearchSeasonTorrents(r.Indexer, r.MetaInfo.Name, r.Season)
+			if err == nil {
+				torrents = append(torrents, seasonedTorrents...)
+			}
 		}
 	}
 
@@ -452,19 +453,6 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 	// 	log.Infof("File %s", f.FileName)
 	// }
 	return nil, nil
-}
-
-func includeSearchBySeason(r *streamRecord) ([]*streamRecord, error) {
-	if r.ContentType == ContentTypeSeries {
-		newR := *r
-		newR.SearchBySeason = true
-		return []*streamRecord{
-			&newR,
-			r,
-		}, nil
-	}
-
-	return []*streamRecord{r}, nil
 }
 
 func deduplicateTorrent() func(r *streamRecord) bool {

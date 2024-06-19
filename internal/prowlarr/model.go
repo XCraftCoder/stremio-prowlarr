@@ -7,10 +7,16 @@ import (
 type TorrentID []byte
 
 type Indexer struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	SortName string `json:"sortName"`
-	Enable   bool   `json:"enable"`
+	ID           int                 `json:"id"`
+	Name         string              `json:"name"`
+	SortName     string              `json:"sortName"`
+	Enable       bool                `json:"enable"`
+	Capabilities IndexerCapabilities `json:"capabilities"`
+}
+
+type IndexerCapabilities struct {
+	LimitMax      int `json:"limitsMax"`
+	LimitDefaults int `json:"limitsDefault"`
 }
 
 type Torrent struct {
