@@ -1,4 +1,4 @@
-name: Golang Package
+name: Release
 
 on:
   release:
@@ -9,21 +9,6 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-      - run: go version
-      - name: Install dependencies
-        run: go get .
-      - name: Test
-        run: go test ./...
-
   publish:
     needs: build
     runs-on: ubuntu-latest
