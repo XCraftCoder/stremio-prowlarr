@@ -199,6 +199,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 		})
 	}
 
+	c.Response().Header.Add("Cache-control", "max-age=300, public")
 	return c.JSON(GetStreamsResponse{
 		Streams: results,
 	})
