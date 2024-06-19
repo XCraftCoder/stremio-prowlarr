@@ -14,7 +14,7 @@ services:
     environment:
       - PROWLARR_URL=${PROWLARR_URL}
       - PROWLARR_API_KEY=${PROWLARR_API_KEY}
-      - REAL_DEBRID_API_TOKEN=${REAL_DEBRID_API_TOKEN}
+      - PRODUCTION=${PRODUCTION}
     ports:
       - 7000:7000
     depends_on:

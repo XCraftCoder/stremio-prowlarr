@@ -67,6 +67,7 @@ type Addon struct {
 	name        string
 	version     string
 	description string
+	development bool
 
 	cinemetaClient *cinemeta.CineMeta
 	prowlarrClient *prowlarr.Prowlarr
@@ -179,6 +180,9 @@ func (add *Addon) HandleDownload(c *fiber.Ctx) error {
 		downloadURL = string(rawDownloadURL)
 	}
 
+	if !add.development {
+		c.Response().Header.Add("Cache-control", "max-age=86400, public")
+	}
 	return c.Redirect(downloadURL)
 }
 
@@ -213,7 +217,9 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 		})
 	}
 
-	c.Response().Header.Add("Cache-control", "max-age=300, public, stale-while-revalidate=604800, stale-if-error=604800")
+	if !add.development {
+		c.Response().Header.Add("Cache-control", "max-age=1800, public, stale-while-revalidate=604800, stale-if-error=604800")
+	}
 	return c.JSON(GetStreamsResponse{
 		Streams: results,
 	})

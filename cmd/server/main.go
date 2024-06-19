@@ -18,9 +18,9 @@ import (
 )
 
 type config struct {
-	ProwlarrURL        string `env:"PROWLARR_URL"`
-	ProwlarrAPIKey     string `env:"PROWLARR_API_KEY"`
-	RealDebridAPIToken string `env:"REAL_DEBRID_API_TOKEN"`
+	ProwlarrURL    string `env:"PROWLARR_URL"`
+	ProwlarrAPIKey string `env:"PROWLARR_API_KEY"`
+	Production     bool   `env:"PRODUCTION"`
 }
 
 var (
@@ -43,7 +43,7 @@ func main() {
 				urlPath := c.Path()
 				loc := maskedPathPattern.FindStringSubmatchIndex(urlPath)
 				if len(loc) > 1 {
-					return output.WriteString(urlPath[:loc[0]+1] + "***" + urlPath[loc[1]-1:])
+					return output.WriteString(urlPath[:loc[0]+1] + "***" + urlPath[loc[1]:])
 				} else {
 					return output.WriteString(urlPath)
 				}
@@ -61,6 +61,7 @@ func main() {
 		addon.WithID("stremio.addon.prowlarr"),
 		addon.WithName("Prowlarr"),
 		addon.WithProwlarr(cfg.ProwlarrURL, cfg.ProwlarrAPIKey),
+		addon.WithDevelopment(!cfg.Production),
 	)
 
 	app.Get("/manifest.json", add.HandleGetManifest)

@@ -21,3 +21,9 @@ func WithProwlarr(jacketUrl string, jacketApiKey string) Option {
 		a.prowlarrClient = prowlarr.New(jacketUrl, jacketApiKey)
 	}
 }
+
+func WithDevelopment(development bool) Option {
+	return func(a *Addon) {
+		a.development = development
+	}
+}
