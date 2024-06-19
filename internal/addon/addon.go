@@ -26,11 +26,11 @@ import (
 )
 
 const (
-	cacheSize          = 50 * 1024 * 1024 // 50MB
-	streamRecordExpiry = 10 * 60          // 10m
-	downloadURLExpiry  = 5 * 60
-	minTitleMatch      = 0.5
-	episodeFilePattern = `(?i)\bS?(%d|%02d)x?\b?E?%02d\b`
+	cacheSize           = 50 * 1024 * 1024 // 50MB
+	downloadURLExpiry   = 5 * 60
+	minTitleMatch       = 0.5
+	maxStreamsResult    = 10
+	infoHashCacheExpiry = 24 * 60 * 60 // 1 day
 )
 
 var (
@@ -96,11 +96,6 @@ type streamRecord struct {
 	SearchBySeason bool
 	RDClient       *realdebrid.RealDebrid
 }
-
-const (
-	maxStreamsResult = 10
-	magnetUriExpiry  = 60 * 60 // 10 minutes
-)
 
 func New(opts ...Option) *Addon {
 	addon := &Addon{
@@ -340,27 +335,27 @@ func (add *Addon) searchForTorrents(r *streamRecord) ([]*streamRecord, error) {
 func (add *Addon) enrichInfoHash(r *streamRecord) ([]*streamRecord, error) {
 	var err error
 
-	if r.Torrent.MagnetUri == "" {
-		magnetUri, err := add.cache.Get(r.Torrent.GID)
+	if r.Torrent.InfoHash == "" {
+		infoHash, err := add.cache.Get(r.Torrent.GID)
 		if err == nil {
-			r.Torrent.MagnetUri = string(magnetUri)
+			r.Torrent.InfoHash = string(infoHash)
 		}
 	}
 
-	r.Torrent, err = add.prowlarrClient.FetchMagnetURI(r.Torrent)
+	r.Torrent, err = add.prowlarrClient.FetchInfoHash(r.Torrent)
 	if err != nil {
-		log.Errorf("Failed to fetch magnetUri for %s due to: %v", r.Torrent.Guid, err)
+		log.Errorf("Failed to fetch InfoHash for %s due to: %v", r.Torrent.Guid, err)
 		return nil, nil
 	}
 
-	if r.Torrent.MagnetUri == "" {
-		log.Warnf("Unable to find Magnet URI for %s", r.Torrent.Guid)
+	if r.Torrent.InfoHash == "" {
+		log.Warnf("Unable to find InfoHash for %s", r.Torrent.Guid)
 		return nil, nil
 	}
 
-	err = add.cache.Set(r.Torrent.GID, []byte(r.Torrent.MagnetUri), magnetUriExpiry)
+	err = add.cache.Set(r.Torrent.GID, []byte(r.Torrent.InfoHash), infoHashCacheExpiry)
 	if err != nil {
-		log.Errorf("Failed to cache the magnet URI due to: %v", err)
+		log.Errorf("Failed to cache the InfoHash due to: %v", err)
 		return nil, nil
 	}
 
@@ -432,14 +427,17 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 	case ContentTypeMovie:
 		r.MediaFile = findMovieMediaFile(r.Files)
 	case ContentTypeSeries:
-		r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(episodeFilePattern, r.Season, r.Season, r.Episode))
+		// Season & Episode together
+		r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`(?i)\bS?(%d|%02d)[x\.-]?E?%02d\b`, r.Season, r.Season, r.Episode))
 
 		if r.MediaFile == nil {
+			// Season & Episode are separate
 			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`(?i)\bS?%02d\b.+\bE?%02d\b`, r.Season, r.Episode))
 		}
 
 		if r.MediaFile == nil {
-			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`\b%d\b`, r.Episode))
+			// Episode only
+			r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`(?i)\bE?(%d|%02d)\b`, r.Episode, r.Episode))
 		}
 	default:
 		return nil, errors.New("invalid content type")
@@ -557,14 +555,6 @@ func checkTitleSimilarity(left, right string) float64 {
 }
 
 func hasMoreSeeders(r1, r2 *streamRecord) bool {
-	if r1.Torrent.Imdb > 0 && r2.Torrent.Imdb == 0 {
-		return true
-	}
-
-	if r1.Torrent.Imdb == 0 && r2.Torrent.Imdb > 0 {
-		return false
-	}
-
 	if r1.TitleInfo.Resolution > r2.TitleInfo.Resolution {
 		return true
 	}
@@ -573,11 +563,11 @@ func hasMoreSeeders(r1, r2 *streamRecord) bool {
 		return false
 	}
 
-	if r1.Torrent.MagnetUri != "" && r2.Torrent.MagnetUri == "" {
+	if r1.Torrent.InfoHash != "" && r2.Torrent.InfoHash == "" {
 		return true
 	}
 
-	if r1.Torrent.MagnetUri == "" && r2.Torrent.MagnetUri != "" {
+	if r1.Torrent.InfoHash == "" && r2.Torrent.InfoHash != "" {
 		return false
 	}
 

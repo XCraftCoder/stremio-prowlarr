@@ -136,7 +136,11 @@ func (j *Prowlarr) SearchSeriesTorrents(indexer *Indexer, name string) ([]*Torre
 	return result, nil
 }
 
-func (j *Prowlarr) FetchMagnetURI(torrent *Torrent) (*Torrent, error) {
+func (j *Prowlarr) FetchInfoHash(torrent *Torrent) (*Torrent, error) {
+	if torrent.InfoHash != "" {
+		return torrent, nil
+	}
+
 	if torrent.MagnetUri == "" {
 		resp, err := j.client.R().Get(torrent.Link)
 		if err != nil {
@@ -168,13 +172,11 @@ func (j *Prowlarr) FetchMagnetURI(torrent *Torrent) (*Torrent, error) {
 		}
 	}
 
-	if torrent.InfoHash == "" {
-		magnet, err := ParseMagnetUri(torrent.MagnetUri)
-		if err != nil {
-			return torrent, err
-		}
-		torrent.InfoHash = strings.ToLower(magnet.InfoHashStr())
+	magnet, err := ParseMagnetUri(torrent.MagnetUri)
+	if err != nil {
+		return torrent, err
 	}
+	torrent.InfoHash = strings.ToLower(magnet.InfoHashStr())
 
 	return torrent, nil
 }
