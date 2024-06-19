@@ -36,3 +36,9 @@ func (s *simpleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 func (s *simpleStage[R]) bufSize() int {
 	return 0
 }
+
+func Concurrency[R any](concurrency int) SimpleStageOption[R] {
+	return func(p *simpleStage[R]) {
+		p.concurrency = concurrency
+	}
+}

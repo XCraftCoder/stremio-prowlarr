@@ -56,4 +56,14 @@ func TestParse(t *testing.T) {
 	t.Logf("Info: %v", metaInfo)
 	require.Equal(t, 2, metaInfo.FromSeason)
 	require.Equal(t, 2, metaInfo.ToSeason)
+
+	metaInfo = titleparser.Parse("Malcolm in the Middle 2000 Season 1 7 S01 S07 1080p AMZN WEB-DL x265 HEVC 10bit EAC3 5.1 Silence-QxR")
+	t.Logf("Info: %v", metaInfo)
+	require.Equal(t, 1, metaInfo.FromSeason)
+	require.Equal(t, 7, metaInfo.ToSeason)
+
+	metaInfo = titleparser.Parse("Malcolm in the Middle 2000 Season 1 7 1080p AMZN WEB-DL x265 HEVC 10bit EAC3 5.1 Silence-QxR")
+	t.Logf("Info: %v", metaInfo)
+	require.Equal(t, 1, metaInfo.FromSeason)
+	require.Equal(t, 7, metaInfo.ToSeason)
 }

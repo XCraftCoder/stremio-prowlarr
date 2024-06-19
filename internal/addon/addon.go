@@ -95,7 +95,7 @@ type streamRecord struct {
 
 const (
 	maxStreamsResult = 10
-	magnetUriExpiry  = 10 * 60 // 10 minutes
+	magnetUriExpiry  = 60 * 60 // 10 minutes
 )
 
 func New(opts ...Option) *Addon {
@@ -196,7 +196,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p.Map(add.parseTorrentTitle)
 	p.Filter(excludeTorrents)
 	p.Shuffle(hasMoreSeeders)
-	p.FanOut(add.enrichInfoHash)
+	p.FanOut(add.enrichInfoHash, pipe.Concurrency[streamRecord](10))
 	p.Filter(deduplicateTorrent())
 	p.Batch(add.enrichWithCachedFiles)
 	p.FanOut(add.locateMediaFile)

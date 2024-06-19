@@ -4,7 +4,7 @@ import "sync"
 
 const (
 	defaultBatchSize  = 10
-	defaultWorkerSize = 5
+	defaultWorkerSize = 2
 )
 
 type batchStage[R any] struct {
