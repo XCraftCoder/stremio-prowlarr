@@ -190,8 +190,16 @@
 
         <form class="pure-form" id="mainForm">
             <div class="form-element">
+                <div class="label-to-top">Prowlarr API URL:</div>
+                <input type="text" id="pUrl" name="pUrl" class="full-width" required value="http://prowlarr:9696"/>
+            </div>
+            <div class="form-element">
+                <div class="label-to-top">Prowlarr API Key:</div>
+                <input type="text" id="pKey" name="pKey" class="full-width" required />
+            </div>
+            <div class="form-element">
                 <div class="label-to-top">Real Debrid API Token (<a href="https://real-debrid.com/apitoken"
-                        target=”_blank”>get here</a>)</div>
+                        target=”_blank”>get here</a>):</div>
                 <input type="text" id="rd" name="rd" class="full-width" required />
             </div>
         </form>

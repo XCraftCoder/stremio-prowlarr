@@ -25,7 +25,7 @@ var (
 		parseQuality(`(?i)\bPPVRip\b`),
 		parseQuality(`(?i)\bR5\b`),
 		parseQuality(`(?i)\bVHSSCR\b`),
-		matchAndSetQuality(`(?i)\bBlu-?ray[\s\.]Remux\b`, "brremux"),
+		matchAndSetQuality(`(?i)\bBlu-?ray(?:[\s\.]|.+\b)Remux\b`, "brremux"),
 		matchAndSetQuality(`(?i)\bBlu-?ray\b`, "bluray"),
 		parseQuality(`(?i)\bWEB-?DL\b`),
 		parseQuality(`(?i)\bWEB-?Rip\b`),

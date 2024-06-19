@@ -29,4 +29,4 @@ A StremIO addon for Prowlarr
 - [ ] Parse Multi Year
 - [x] Cache infoHash instead of magnetURI
 - [x] Support /configure and userData
-- [ ] Move prowlarr to userData
+- [x] Move prowlarr to userData

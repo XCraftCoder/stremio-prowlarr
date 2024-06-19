@@ -95,6 +95,7 @@ type streamRecord struct {
 	MediaFile      *realdebrid.File
 	SearchBySeason bool
 	RDClient       *realdebrid.RealDebrid
+	Prowlarr       *prowlarr.Prowlarr
 }
 
 func New(opts ...Option) *Addon {
@@ -118,10 +119,6 @@ func New(opts ...Option) *Addon {
 
 func (add *Addon) HandleGetManifest(c *fiber.Ctx) error {
 	_, err := parseUserData(c)
-	if err != nil {
-		log.Errorf("Invalid user data, err: %v", err)
-		return c.SendStatus(fiber.StatusBadRequest)
-	}
 
 	manifest := &Manifest{
 		ID:          add.id,
@@ -140,7 +137,7 @@ func (add *Addon) HandleGetManifest(c *fiber.Ctx) error {
 		IDPrefixes: []string{"tt"},
 		BehaviorHints: &BehaviorHints{
 			Configurable:          true,
-			ConfigurationRequired: false, // this is weird, stremio doesn't allow to install with this configuration is on
+			ConfigurationRequired: err != nil,
 		},
 	}
 
@@ -229,6 +226,10 @@ func (add *Addon) sourceFromContext(c *fiber.Ctx) func() ([]*streamRecord, error
 		}
 
 		realDebrid := realdebrid.New(userData.RDAPIKey, ipAddress)
+		prowlarrClient := add.prowlarrClient
+		if userData.ProwlarrAPIKey != "" {
+			prowlarrClient = prowlarr.New(userData.ProwlarrURL, userData.ProwlarrAPIKey)
+		}
 
 		id := c.Params("id")
 		season := 0
@@ -252,6 +253,7 @@ func (add *Addon) sourceFromContext(c *fiber.Ctx) func() ([]*streamRecord, error
 			BaseURL:       c.BaseURL(),
 			RemoteAddress: c.Context().RemoteIP().String(),
 			RDClient:      realDebrid,
+			Prowlarr:      prowlarrClient,
 		}}, nil
 	}
 }
@@ -280,7 +282,7 @@ func (add *Addon) fetchMetaInfo(r *streamRecord) (*streamRecord, error) {
 }
 
 func (add *Addon) fanOutToAllIndexers(r *streamRecord) ([]*streamRecord, error) {
-	allIndexers, err := add.prowlarrClient.GetAllIndexers()
+	allIndexers, err := r.Prowlarr.GetAllIndexers()
 	if err != nil {
 		return nil, fmt.Errorf("couldn't load all indexers: %v", err)
 	}
@@ -306,11 +308,11 @@ func (add *Addon) searchForTorrents(r *streamRecord) ([]*streamRecord, error) {
 
 	switch r.ContentType {
 	case ContentTypeMovie:
-		torrents, err = add.prowlarrClient.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
+		torrents, err = r.Prowlarr.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
 	case ContentTypeSeries:
-		torrents, err = add.prowlarrClient.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name)
+		torrents, err = r.Prowlarr.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name)
 		if err == nil && len(torrents) == r.Indexer.Capabilities.LimitDefaults && r.Indexer.Capabilities.LimitDefaults > 0 {
-			seasonedTorrents, err := add.prowlarrClient.SearchSeasonTorrents(r.Indexer, r.MetaInfo.Name, r.Season)
+			seasonedTorrents, err := r.Prowlarr.SearchSeasonTorrents(r.Indexer, r.MetaInfo.Name, r.Season)
 			if err == nil {
 				torrents = append(torrents, seasonedTorrents...)
 			}
@@ -343,7 +345,7 @@ func (add *Addon) enrichInfoHash(r *streamRecord) ([]*streamRecord, error) {
 		}
 	}
 
-	r.Torrent, err = add.prowlarrClient.FetchInfoHash(r.Torrent)
+	r.Torrent, err = r.Prowlarr.FetchInfoHash(r.Torrent)
 	if err != nil {
 		log.Errorf("Failed to fetch InfoHash for %s due to: %v", r.Torrent.Guid, err)
 		return nil, nil
