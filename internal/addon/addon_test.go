@@ -10,9 +10,11 @@ import (
 )
 
 func TestTitleCheck(t *testing.T) {
-	t.Logf("Diff: %f", checkTitleSimilarity("House", "Winter House"))
-	t.Logf("Diff: %f", checkTitleSimilarity("House", "House_-_"))
-	t.Logf("Diff: %f", checkTitleSimilarity("Mad Max: Fury Road", "Mad Max Fury Road"))
+	t.Logf("Diff: %d", checkTitleSimilarity("House", "House M D"))
+	require.True(t, checkTitleSimilarity("House", "Winter House") > maxTitleDistance)
+	require.True(t, checkTitleSimilarity("House", "House_-_") < maxTitleDistance)
+	require.True(t, checkTitleSimilarity("Mad Max: Fury Road", "Mad Max Fury Road") < maxTitleDistance)
+	require.True(t, checkTitleSimilarity("House", "House M D") < maxTitleDistance)
 }
 
 func Test_Encoding(t *testing.T) {
@@ -30,8 +32,7 @@ func Test_FindingEpisodeFile(t *testing.T) {
 	add := &Addon{}
 
 	testCases := map[string]struct {
-		r     *streamRecord
-		found bool
+		r *streamRecord
 	}{
 		"should match 708": {
 			r: &streamRecord{
@@ -40,11 +41,11 @@ func Test_FindingEpisodeFile(t *testing.T) {
 				Season:      7,
 				Files: []*realdebrid.File{
 					{
+						ID:       "match",
 						FileName: "708 - Army Buddy.mkv",
 					},
 				},
 			},
-			found: true,
 		},
 		"should match S07E08": {
 			r: &streamRecord{
@@ -53,11 +54,42 @@ func Test_FindingEpisodeFile(t *testing.T) {
 				Season:      7,
 				Files: []*realdebrid.File{
 					{
+						ID:       "match",
 						FileName: "Malcolm in the Middle (2000) - S07E08 - Army Buddy (1080p AMZN WEB-DL x265 Silence).mkv",
 					},
 				},
 			},
-			found: true,
+		},
+
+		"should match Season 3 Episode 05": {
+			r: &streamRecord{
+				ContentType: ContentTypeSeries,
+				Season:      3,
+				Episode:     5,
+				Files: []*realdebrid.File{
+					{
+						ID:       "match",
+						FileName: "House MD Season 3 Episode 05 - Else.avi",
+					},
+					{
+						FileName: "House MD Season 8 Episode 05 - The Confession.avi",
+					},
+				},
+			},
+		},
+
+		"should match _S01E05_": {
+			r: &streamRecord{
+				ContentType: ContentTypeSeries,
+				Episode:     5,
+				Season:      1,
+				Files: []*realdebrid.File{
+					{
+						ID:       "match",
+						FileName: "Dr_ House_S01E05_K čertu s tebou, jestli to uděláš.mkv",
+					},
+				},
+			},
 		},
 	}
 
@@ -66,7 +98,8 @@ func Test_FindingEpisodeFile(t *testing.T) {
 			require.NotPanics(t, func() {
 				result, err := add.locateMediaFile(tc.r)
 				require.NoError(t, err)
-				require.Equal(t, tc.found, len(result) == 1)
+				require.Len(t, result, 1)
+				require.Equal(t, "match", result[0].MediaFile.ID)
 			})
 		})
 	}

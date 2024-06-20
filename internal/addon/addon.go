@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/adrg/strutil"
 	"github.com/adrg/strutil/metrics"
 	"github.com/bongnv/prowlarr-stremio/internal/cinemeta"
 	"github.com/bongnv/prowlarr-stremio/internal/debrid/realdebrid"
@@ -28,7 +27,7 @@ import (
 const (
 	cacheSize           = 50 * 1024 * 1024 // 50MB
 	downloadURLExpiry   = 5 * 60
-	minTitleMatch       = 0.5
+	maxTitleDistance    = 5
 	maxStreamsResult    = 10
 	infoHashCacheExpiry = 24 * 60 * 60 // 1 day
 )
@@ -435,7 +434,7 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 		r.MediaFile = findMovieMediaFile(r.Files)
 	case ContentTypeSeries:
 		// Season & Episode together
-		r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`(?i)\bS?(%d|%02d)[x\.-]?E?%02d\b`, r.Season, r.Season, r.Episode))
+		r.MediaFile = findEpisodeMediaFile(r.Files, fmt.Sprintf(`(?i)(\b|_)S?(%d|%02d)[x\.\-]?E?%02d(\b|_)`, r.Season, r.Season, r.Episode))
 
 		if r.MediaFile == nil {
 			// Season & Episode are separate
@@ -454,7 +453,7 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 		return []*streamRecord{r}, nil
 	}
 
-	log.Infof("Couldn't locate media file: %s", r.Torrent.Title)
+	log.Infof("Couldn't locate media file: %s, %d, %d", r.Torrent.Title, r.Season, r.Episode)
 	// for _, f := range r.Files {
 	// 	log.Infof("File %s, %s", f.ID, f.FileName)
 	// }
@@ -530,28 +529,34 @@ func excludeTorrents(r *streamRecord) bool {
 	torrentOK := qualityOK && imdbOK && yearOK && seasonOK && episodeOK
 	if torrentOK && r.Torrent.Imdb == 0 {
 		diff := checkTitleSimilarity(r.MetaInfo.Name, r.TitleInfo.Title)
-		torrentOK = torrentOK && diff > minTitleMatch
-		if !torrentOK && (diff > minTitleMatch-0.1) {
-			log.Infof("Excluded %s, diff: %f", r.Torrent.Title, diff)
+		torrentOK = torrentOK && diff < maxTitleDistance
+		if !torrentOK && (diff < maxTitleDistance+3) {
+			log.Infof("Excluded %s, title: %s, diff: %d", r.Torrent.Title, r.TitleInfo.Title, diff)
 		}
 	}
 
-	if !torrentOK {
-		log.Infof("Excluded %s, quality: %v, imdb: %v, year: %v, season: %v, episode: %v",
-			r.Torrent.Title,
-			qualityOK,
-			imdbOK, yearOK,
-			seasonOK,
-			episodeOK,
-		)
-	}
+	// if !torrentOK {
+	// 	log.Infof("Excluded %s, quality: %v, imdb: %v, year: %v, season: %v, episode: %v",
+	// 		r.Torrent.Title,
+	// 		qualityOK,
+	// 		imdbOK, yearOK,
+	// 		seasonOK,
+	// 		episodeOK,
+	// 	)
+	// }
 	return torrentOK
 }
 
-func checkTitleSimilarity(left, right string) float64 {
-	left = nonWordCharacter.ReplaceAllString(strings.ToLower(left), " ")
-	right = nonWordCharacter.ReplaceAllString(strings.ToLower(right), " ")
-	return strutil.Similarity(left, right, metrics.NewLevenshtein())
+func checkTitleSimilarity(left, right string) int {
+	left = strings.TrimSpace(nonWordCharacter.ReplaceAllString(left, " "))
+	right = strings.TrimSpace(nonWordCharacter.ReplaceAllString(right, " "))
+	metrics := &metrics.Levenshtein{
+		CaseSensitive: false,
+		InsertCost:    2,
+		DeleteCost:    3,
+		ReplaceCost:   3,
+	}
+	return metrics.Distance(left, right)
 }
 
 func hasMoreSeeders(r1, r2 *streamRecord) bool {

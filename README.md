@@ -31,3 +31,4 @@ A StremIO addon for Prowlarr
 - [x] Support /configure and userData
 - [x] Move prowlarr to userData
 - [ ] Fix checking RD cache not showing full paths. Should move season/episode/ to path instead of fileID
+- [ ] Parse HDR
