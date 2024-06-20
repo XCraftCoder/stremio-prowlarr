@@ -33,7 +33,7 @@ func (s *simpleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 	wg.Wait()
 }
 
-func (s *simpleStage[R]) bufSize() int {
+func (s *simpleStage[R]) getBufSize() int {
 	return 0
 }
 

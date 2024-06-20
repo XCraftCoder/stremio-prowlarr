@@ -119,6 +119,6 @@ func (s *batchStage[R]) processNextBatch(r *R, inCh <-chan *R) {
 	}
 }
 
-func (s *batchStage[R]) bufSize() int {
+func (s *batchStage[R]) getBufSize() int {
 	return 5
 }

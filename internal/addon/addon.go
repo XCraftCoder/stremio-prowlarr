@@ -28,7 +28,7 @@ const (
 	cacheSize           = 50 * 1024 * 1024 // 50MB
 	downloadURLExpiry   = 5 * 60
 	maxTitleDistance    = 5
-	maxStreamsResult    = 10
+	maxStreamsResult    = 5
 	infoHashCacheExpiry = 24 * 60 * 60 // 1 day
 )
 
@@ -187,7 +187,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 
 	p.Map(add.fetchMetaInfo)
 	p.FanOut(add.fanOutToAllIndexers)
-	p.FanOut(add.searchForTorrents)
+	p.FanOut(add.searchForTorrents, pipe.Concurrency[streamRecord](10))
 	p.Map(add.parseTorrentTitle)
 	p.Filter(excludeTorrents)
 	p.Shuffle(hasMoreSeeders)
@@ -198,7 +198,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p.Shuffle(hasHigherQuality)
 
 	records := add.sinkResults(p)
-	results := make([]StreamItem, 0, len(records))
+	results := make([]StreamItem, 0, maxStreamsResult)
 	for _, r := range records {
 		results = append(results, StreamItem{
 			Name:  fmt.Sprintf("[%s]", formatResolution(r.TitleInfo.Resolution)),
@@ -209,6 +209,10 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 				FileName:  path.Base(r.MediaFile.FileName),
 			},
 		})
+
+		if len(results) == maxStreamsResult {
+			break
+		}
 	}
 
 	if !add.development {
@@ -401,17 +405,9 @@ func (add *Addon) enrichWithCachedFiles(records []*streamRecord) ([]*streamRecor
 }
 
 func (add *Addon) sinkResults(p *pipe.Pipe[streamRecord]) []*streamRecord {
-	records := make([]*streamRecord, 0, maxStreamsResult)
+	records := []*streamRecord{}
 	err := p.Sink(func(r *streamRecord) error {
-		if len(records) == maxStreamsResult {
-			log.Info("Enough results have been collected.")
-			return nil
-		}
-
 		records = append(records, r)
-		if len(records) == maxStreamsResult {
-			p.Stop()
-		}
 		return nil
 	})
 

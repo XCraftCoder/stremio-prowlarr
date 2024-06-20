@@ -8,9 +8,12 @@ const (
 	defaultShuffleSize = 200
 )
 
+type ShuffleStageOption[R any] func(s *shuffleStage[R])
+
 type shuffleStage[R any] struct {
 	stopped <-chan struct{}
 	queue   *priorityQueue[R]
+	bufSize int
 }
 
 func (s *shuffleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
@@ -67,8 +70,8 @@ func (s *shuffleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 	}
 }
 
-func (s *shuffleStage[R]) bufSize() int {
-	return 10
+func (s *shuffleStage[R]) getBufSize() int {
+	return s.bufSize
 }
 
 type priorityQueue[R any] struct {
@@ -100,4 +103,10 @@ func (pq *priorityQueue[R]) Pop() any {
 
 func (pq priorityQueue[R]) Peek() *R {
 	return pq.data[0]
+}
+
+func ShuffleBuffer[R any](size int) ShuffleStageOption[R] {
+	return func(s *shuffleStage[R]) {
+		s.bufSize = size
+	}
 }

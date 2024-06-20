@@ -1,14 +1,18 @@
 package pipe
 
+import "time"
+
 const (
 	defaultConcurrency = 5
+	pipeTimeout        = 20 * time.Second
 )
 
 type Pipe[R any] struct {
-	source  Source[R]
-	stages  []pipeStage[R]
-	stopped chan struct{}
-	errCh   chan error
+	source    Source[R]
+	stages    []pipeStage[R]
+	stopped   chan struct{}
+	errCh     chan error
+	timeoutCh <-chan time.Time
 }
 
 type Source[R any] func() ([]*R, error)
@@ -16,14 +20,16 @@ type Sink[R any] func(*R) error
 
 type pipeStage[R any] interface {
 	process(inCh <-chan *R, outCh chan<- *R)
-	bufSize() int
+	getBufSize() int
 }
 
 func New[R any](source Source[R]) *Pipe[R] {
+
 	return &Pipe[R]{
-		source:  source,
-		errCh:   make(chan error, 1),
-		stopped: make(chan struct{}),
+		source:    source,
+		errCh:     make(chan error, 1),
+		stopped:   make(chan struct{}),
+		timeoutCh: time.After(pipeTimeout),
 	}
 }
 
@@ -64,7 +70,11 @@ func (p *Pipe[R]) Sink(sink Sink[R]) error {
 	}
 
 	p.startSink(sink, outCh)
-	<-p.stopped
+	select {
+	case <-p.timeoutCh:
+		p.Stop()
+	case <-p.stopped:
+	}
 	return <-p.errCh
 }
 
@@ -94,13 +104,18 @@ func (p *Pipe[R]) Batch(fn func([]*R) ([]*R, error), opts ...BatchStageOption[R]
 	p.stages = append(p.stages, stage)
 }
 
-func (p *Pipe[R]) Shuffle(higher func(*R, *R) bool) {
+func (p *Pipe[R]) Shuffle(higher func(*R, *R) bool, opts ...ShuffleStageOption[R]) {
 	stage := &shuffleStage[R]{
 		stopped: p.stopped,
 		queue: &priorityQueue[R]{
 			data:   make([]*R, 0, defaultShuffleSize),
 			higher: higher,
 		},
+		bufSize: 10,
+	}
+
+	for _, opt := range opts {
+		opt(stage)
 	}
 
 	p.stages = append(p.stages, stage)
@@ -154,5 +169,5 @@ func (p *Pipe[R]) getBufSize(index int) int {
 		return 0
 	}
 
-	return p.stages[index].bufSize()
+	return p.stages[index].getBufSize()
 }
