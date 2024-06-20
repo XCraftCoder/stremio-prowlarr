@@ -46,6 +46,7 @@ var (
 		parseSingleSeason(`(?i)\bs(\d{2})\b`),
 		parseSingleSeason(`(?i)\bseason[- ]?(\d{1,2})\b`),
 		parseLanguage(`\bFR(?:ENCH)?\b`),
+		parseFillerWords(`(?i)[-\s\.\(]+\b(?:TV|Complete|Full) series\b`),
 	}
 )
 
@@ -303,5 +304,13 @@ func parseLanguage(pattern string) func(string, *MetaInfo) int {
 	compiled := regexp.MustCompile(pattern)
 	return func(title string, mi *MetaInfo) int {
 		return findValue(&mi.Quality, title, compiled)
+	}
+}
+
+func parseFillerWords(pattern string) func(string, *MetaInfo) int {
+	compiled := regexp.MustCompile(pattern)
+	return func(title string, mi *MetaInfo) int {
+		var filler string
+		return findValue(&filler, title, compiled)
 	}
 }

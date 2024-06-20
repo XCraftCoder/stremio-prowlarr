@@ -59,6 +59,11 @@ var (
 	}
 
 	nonWordCharacter = regexp.MustCompile(`[^a-zA-Z0-9]+`)
+
+	resolutionName = map[int]string{
+		2160: "4K",
+		0:    "Unknown",
+	}
 )
 
 // Addon implements a Stremio addon
@@ -100,7 +105,6 @@ type streamRecord struct {
 
 func New(opts ...Option) *Addon {
 	addon := &Addon{
-		version:        "0.1.0",
 		description:    "A Stremio addon",
 		cinemetaClient: cinemeta.New(),
 		cache:          freecache.NewCache(cacheSize),
@@ -198,8 +202,8 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	results := make([]StreamItem, 0, len(records))
 	for _, r := range records {
 		results = append(results, StreamItem{
-			Name:  fmt.Sprintf("[%dp]", r.TitleInfo.Resolution),
-			Title: fmt.Sprintf("%s\n%s\n%s|%d|%s", r.Torrent.Title, r.MediaFile.FileName, bytesConvert(r.MediaFile.FileSize), r.Torrent.Seeders, r.Indexer.Name),
+			Name:  fmt.Sprintf("[%s]", formatResolution(r.TitleInfo.Resolution)),
+			Title: fmt.Sprintf("%s\n%s\n%s | %d | %s", r.Torrent.Title, r.MediaFile.FileName, bytesConvert(r.MediaFile.FileSize), r.Torrent.Seeders, r.Indexer.Name),
 			URL:   r.BaseURL + compiled.ReplaceAllString(c.Path(), "/download/"+r.Torrent.InfoHash+"/"+r.MediaFile.ID),
 			BehaviorHints: &StreamBehaviorHints{
 				VideoSize: r.MediaFile.FileSize,
@@ -452,7 +456,7 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 
 	log.Infof("Couldn't locate media file: %s", r.Torrent.Title)
 	// for _, f := range r.Files {
-	// 	log.Infof("File %s", f.FileName)
+	// 	log.Infof("File %s, %s", f.ID, f.FileName)
 	// }
 	return nil, nil
 }
@@ -520,22 +524,28 @@ func excludeTorrents(r *streamRecord) bool {
 	qualityOK := !slices.Contains(remuxSources, r.TitleInfo.Quality) &&
 		!slices.Contains(camSources, r.TitleInfo.Quality) && !r.TitleInfo.ThreeD
 	imdbOK := (r.Torrent.Imdb == 0 || r.Torrent.Imdb == r.MetaInfo.IMDBID)
-	titleOK := (r.Torrent.Imdb > 0 || checkTitleSimilarity(r.MetaInfo.Name, r.TitleInfo.Title) > minTitleMatch)
 	yearOK := (r.TitleInfo.Year == 0 || (r.MetaInfo.FromYear <= r.TitleInfo.Year && r.MetaInfo.ToYear >= r.TitleInfo.Year))
 	seasonOK := r.ContentType != ContentTypeSeries || (r.TitleInfo.FromSeason == 0 || (r.TitleInfo.FromSeason <= r.Season && r.TitleInfo.ToSeason >= r.Season))
 	episodeOK := r.ContentType != ContentTypeSeries || (r.TitleInfo.Episode == 0 || r.TitleInfo.Episode == r.Episode)
-	result := qualityOK && imdbOK && yearOK && seasonOK && episodeOK && titleOK
-	// if !result {
-	// 	log.Infof("Excluded %s, quality: %v, imdb: %v, year: %v, season: %v, episode: %v, title: %v",
-	// 		r.Torrent.Title,
-	// 		qualityOK,
-	// 		imdbOK, yearOK,
-	// 		seasonOK,
-	// 		episodeOK,
-	// 		titleOK,
-	// 	)
-	// }
-	return result
+	torrentOK := qualityOK && imdbOK && yearOK && seasonOK && episodeOK
+	if torrentOK && r.Torrent.Imdb == 0 {
+		diff := checkTitleSimilarity(r.MetaInfo.Name, r.TitleInfo.Title)
+		torrentOK = torrentOK && diff > minTitleMatch
+		if !torrentOK && (diff > minTitleMatch-0.1) {
+			log.Infof("Excluded %s, diff: %f", r.Torrent.Title, diff)
+		}
+	}
+
+	if !torrentOK {
+		log.Infof("Excluded %s, quality: %v, imdb: %v, year: %v, season: %v, episode: %v",
+			r.Torrent.Title,
+			qualityOK,
+			imdbOK, yearOK,
+			seasonOK,
+			episodeOK,
+		)
+	}
+	return torrentOK
 }
 
 func checkTitleSimilarity(left, right string) float64 {
@@ -617,4 +627,12 @@ func parseUserData(c *fiber.Ctx) (*UserData, error) {
 	}
 
 	return userData, nil
+}
+
+func formatResolution(resolution int) string {
+	if name, ok := resolutionName[resolution]; ok {
+		return name
+	}
+
+	return fmt.Sprintf("%dp", resolution)
 }

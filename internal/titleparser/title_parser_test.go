@@ -78,4 +78,8 @@ func TestParse(t *testing.T) {
 	metaInfo = titleparser.Parse("Mad Max Fury Road 2015 UHD BluRay 2160p TrueHD Atmos 7 1 DV HEVC HYBRID REMUX FraMeSToR")
 	t.Logf("Info: %v", metaInfo)
 	require.Equal(t, "brremux", metaInfo.Quality)
+
+	metaInfo = titleparser.Parse("Mind Your Language - Complete Series (1, 2 & 3)")
+	t.Logf("Info: %v", metaInfo)
+	require.Equal(t, "Mind Your Language", metaInfo.Title)
 }

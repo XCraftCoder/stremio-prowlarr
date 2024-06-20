@@ -27,3 +27,9 @@ func WithDevelopment(development bool) Option {
 		a.development = development
 	}
 }
+
+func WithVersion(version string) Option {
+	return func(a *Addon) {
+		a.version = version
+	}
+}

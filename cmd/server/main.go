@@ -62,6 +62,7 @@ func main() {
 		addon.WithName("Prowlarr"),
 		addon.WithProwlarr(cfg.ProwlarrURL, cfg.ProwlarrAPIKey),
 		addon.WithDevelopment(!cfg.Production),
+		addon.WithVersion("0.1.1"),
 	)
 
 	app.Get("/manifest.json", add.HandleGetManifest)

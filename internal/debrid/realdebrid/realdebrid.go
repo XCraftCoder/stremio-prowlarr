@@ -77,8 +77,8 @@ func (rd *RealDebrid) GetFiles(infoHashs []string) (map[string][]*File, error) {
 	}
 
 	files := map[string][]*File{}
-	found := map[string]bool{}
 	for infoHash, hosterFiles := range result {
+		found := map[string]bool{}
 		for _, variants := range hosterFiles {
 			for _, variant := range variants {
 				for id, f := range variant {
@@ -172,7 +172,6 @@ func (rd *RealDebrid) addMagnet(magnetUri string) (string, error) {
 		SetFormData(map[string]string{
 			"magnet": magnetUri,
 		}).
-		SetDebug(true).
 		SetResult(result).
 		Post("/torrents/addMagnet")
 

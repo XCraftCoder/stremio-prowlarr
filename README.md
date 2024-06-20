@@ -5,7 +5,7 @@ A StremIO addon for Prowlarr
 
 - [x] Generate torrentID & cache via torrentID
 - [x] Use torrentID & fileID in the download link
-- [ ] Use a better algorithm to search for variants in realdebrid.GetFiles. Merge files?
+- [x] Use a better algorithm to search for variants in realdebrid.GetFiles. Merge files?
 - [ ] Support uncached torrents
 - [x] Cache redirect/download link?
 - [x] Consider buffering for better batching & shuffling. Note: Buffering didn't improve much.
@@ -19,7 +19,7 @@ A StremIO addon for Prowlarr
 - [ ] Should loop through all pages in torrents to search for hash
 - [ ] Check why couldn't find episode in House S08 1080p BluRay x265 RARBG ORARBG
 - [x] Deduplicate infoHash
-- [ ] Check flaky results with House S08E01
+- [x] Check flaky results with House S08E01
 - [ ] Better pattern to locate files for series
 - [x] Parse season only from the torrent title
 - [ ] Merge torrent info when deduplicating
@@ -30,3 +30,4 @@ A StremIO addon for Prowlarr
 - [x] Cache infoHash instead of magnetURI
 - [x] Support /configure and userData
 - [x] Move prowlarr to userData
+- [ ] Fix checking RD cache not showing full paths. Should move season/episode/ to path instead of fileID
