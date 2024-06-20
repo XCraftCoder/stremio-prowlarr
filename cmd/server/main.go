@@ -43,8 +43,8 @@ func main() {
 			"maskedPath": func(output logger.Buffer, c *fiber.Ctx, data *logger.Data, extraParam string) (int, error) {
 				urlPath := c.Path()
 				loc := maskedPathPattern.FindStringSubmatchIndex(urlPath)
-				if len(loc) > 1 {
-					return output.WriteString(urlPath[:loc[0]+1] + "***" + urlPath[loc[1]:])
+				if len(loc) > 3 {
+					return output.WriteString(urlPath[:loc[2]] + "***" + urlPath[loc[3]:])
 				} else {
 					return output.WriteString(urlPath)
 				}

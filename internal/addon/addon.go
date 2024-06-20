@@ -30,6 +30,7 @@ const (
 	maxTitleDistance    = 5
 	maxStreamsResult    = 5
 	infoHashCacheExpiry = 24 * 60 * 60 // 1 day
+	maxSizeInBytes      = 30 * 1 << 30 // 30GB
 )
 
 var (
@@ -55,7 +56,6 @@ var (
 		"m4v",
 		"mov",
 		"avi",
-		"ts",
 	}
 
 	nonWordCharacter = regexp.MustCompile(`[^a-zA-Z0-9]+`)
@@ -196,7 +196,6 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 	p.Filter(deduplicateTorrent())
 	p.Batch(add.enrichWithCachedFiles)
 	p.FanOut(add.locateMediaFile)
-	p.Shuffle(hasHigherQuality)
 
 	records := add.sinkResults(p)
 	results := make([]StreamItem, 0, maxStreamsResult)
@@ -464,15 +463,20 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 		return nil, errors.New("invalid content type")
 	}
 
-	if r.MediaFile != nil {
-		return []*streamRecord{r}, nil
+	if r.MediaFile == nil {
+		log.Infof("Couldn't locate media file: %s, %d, %d", r.Torrent.Title, r.Season, r.Episode)
+		// for _, f := range r.Files {
+		// 	log.Infof("File %s, %s", f.ID, f.FileName)
+		// }
+		return nil, nil
 	}
 
-	log.Infof("Couldn't locate media file: %s, %d, %d", r.Torrent.Title, r.Season, r.Episode)
-	// for _, f := range r.Files {
-	// 	log.Infof("File %s, %s", f.ID, f.FileName)
-	// }
-	return nil, nil
+	if r.MediaFile.FileSize >= maxSizeInBytes {
+		log.Infof("Skip %s, with %d because it's too big, %d", r.Torrent.Title, r.MediaFile.FileSize, maxSizeInBytes)
+		return nil, nil
+	}
+
+	return []*streamRecord{r}, nil
 }
 
 func deduplicateTorrent() func(r *streamRecord) bool {
@@ -592,10 +596,6 @@ func hasMoreSeeders(r1, r2 *streamRecord) bool {
 	}
 
 	return r1.Torrent.Seeders > r2.Torrent.Seeders
-}
-
-func hasHigherQuality(r1, r2 *streamRecord) bool {
-	return cmpLowerQuality(r1, r2) != 1
 }
 
 func cmpLowerQuality(r1, r2 *streamRecord) int {
