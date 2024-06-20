@@ -11,6 +11,12 @@ type simpleStage[R any] struct {
 
 type SimpleStageOption[R any] func(p *simpleStage[R])
 
+func Concurrency[R any](concurrency int) SimpleStageOption[R] {
+	return func(p *simpleStage[R]) {
+		p.concurrency = concurrency
+	}
+}
+
 func (s *simpleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 	defer close(outCh)
 
@@ -25,7 +31,7 @@ func (s *simpleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 					s.reportError(err)
 					return
 				} else {
-					sendRecords(outs, outCh, s.stopped)
+					SendRecords(outs, outCh, s.stopped)
 				}
 			}
 		}()
@@ -35,10 +41,4 @@ func (s *simpleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 
 func (s *simpleStage[R]) getBufSize() int {
 	return 0
-}
-
-func Concurrency[R any](concurrency int) SimpleStageOption[R] {
-	return func(p *simpleStage[R]) {
-		p.concurrency = concurrency
-	}
 }

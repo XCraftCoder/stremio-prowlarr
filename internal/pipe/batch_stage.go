@@ -38,7 +38,7 @@ func (s *batchStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 					s.reportError(err)
 					return
 				} else {
-					sendRecords(outs, outCh, s.stoped)
+					SendRecords(outs, outCh, s.stoped)
 				}
 			}
 		}()

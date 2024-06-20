@@ -55,6 +55,7 @@ var (
 		"m4v",
 		"mov",
 		"avi",
+		"ts",
 	}
 
 	nonWordCharacter = regexp.MustCompile(`[^a-zA-Z0-9]+`)
@@ -187,7 +188,7 @@ func (add *Addon) HandleGetStreams(c *fiber.Ctx) error {
 
 	p.Map(add.fetchMetaInfo)
 	p.FanOut(add.fanOutToAllIndexers)
-	p.FanOut(add.searchForTorrents, pipe.Concurrency[streamRecord](10))
+	p.Channel(add.searchForTorrents)
 	p.Map(add.parseTorrentTitle)
 	p.Filter(excludeTorrents)
 	p.Shuffle(hasMoreSeeders)
@@ -309,37 +310,55 @@ func (add *Addon) fanOutToAllIndexers(r *streamRecord) ([]*streamRecord, error) 
 	return records, nil
 }
 
-func (add *Addon) searchForTorrents(r *streamRecord) ([]*streamRecord, error) {
-	torrents := []*prowlarr.Torrent{}
+func (add *Addon) searchForTorrents(r *streamRecord, stopCh <-chan struct{}, outCh chan<- *streamRecord) error {
+	var torrents []*prowlarr.Torrent
 	var err error
+	totalRecords := 0
 
-	switch r.ContentType {
-	case ContentTypeMovie:
-		torrents, err = r.Prowlarr.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
-	case ContentTypeSeries:
-		torrents, err = r.Prowlarr.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name)
-		if err == nil && len(torrents) == r.Indexer.Capabilities.LimitDefaults && r.Indexer.Capabilities.LimitDefaults > 0 {
-			seasonedTorrents, err := r.Prowlarr.SearchSeasonTorrents(r.Indexer, r.MetaInfo.Name, r.Season)
-			if err == nil {
-				torrents = append(torrents, seasonedTorrents...)
+	isStopped := func() bool {
+		select {
+		case <-stopCh:
+			return true
+		default:
+			return false
+		}
+	}
+
+	sendAllRecords := func(torrents []*prowlarr.Torrent) {
+		totalRecords += len(torrents)
+		for _, torrent := range torrents {
+			newRecord := *r
+			newRecord.Torrent = torrent
+			pipe.SendRecords([]*streamRecord{&newRecord}, outCh, stopCh)
+			if isStopped() {
+				return
 			}
 		}
 	}
 
-	if err != nil {
-		log.Errorf("Failed to load torrents for %s in %s, due to: %v", r.MetaInfo.Name, r.Indexer.Name, err)
-		return nil, nil
+	switch r.ContentType {
+	case ContentTypeMovie:
+		torrents, err = r.Prowlarr.SearchMovieTorrents(r.Indexer, r.MetaInfo.Name)
+		if err != nil {
+			return nil
+		}
+
+		sendAllRecords(torrents)
+	case ContentTypeSeries:
+		torrents, err = r.Prowlarr.SearchSeriesTorrents(r.Indexer, r.MetaInfo.Name)
+		if err != nil {
+			return nil
+		}
+
+		sendAllRecords(torrents)
+		if !isStopped() && len(torrents) == r.Indexer.Capabilities.LimitDefaults && r.Indexer.Capabilities.LimitDefaults > 0 {
+			torrents, _ = r.Prowlarr.SearchSeasonTorrents(r.Indexer, r.MetaInfo.Name, r.Season)
+			sendAllRecords(torrents)
+		}
 	}
 
-	records := make([]*streamRecord, 0, len(torrents))
-	for _, torrent := range torrents {
-		newRecord := *r
-		newRecord.Torrent = torrent
-		records = append(records, &newRecord)
-	}
-
-	log.Infof("Found %d from %s", len(records), r.Indexer.Name)
-	return records, nil
+	log.Infof("Found %d from %s", totalRecords, r.Indexer.Name)
+	return nil
 }
 
 func (add *Addon) enrichInfoHash(r *streamRecord) ([]*streamRecord, error) {

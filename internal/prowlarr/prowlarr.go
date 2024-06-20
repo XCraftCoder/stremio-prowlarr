@@ -66,10 +66,12 @@ func (j *Prowlarr) SearchMovieTorrents(indexer *Indexer, name string) ([]*Torren
 		Get("/api/v1/search")
 
 	if err != nil {
+		log.Errorf("Failed to search for %v from %v: %v", name, indexer.Name, err)
 		return nil, err
 	}
 
 	if resp.IsError() {
+		log.Errorf("Failed to search for %v from %v: %v", name, indexer.Name, resp.Error())
 		return nil, fmt.Errorf("error response from prowlarr: %v", resp.Error())
 	}
 
@@ -94,10 +96,12 @@ func (j *Prowlarr) SearchSeasonTorrents(indexer *Indexer, name string, season in
 		Get("/api/v1/search")
 
 	if err != nil {
+		log.Errorf("Failed to search for %v from %v: %v", name, indexer.Name, err)
 		return nil, err
 	}
 
 	if resp.IsError() {
+		log.Errorf("Failed to search for %v from %v: %v", name, indexer.Name, resp.Error())
 		return nil, fmt.Errorf("error response from prowlarr: %v", resp.Error())
 	}
 
@@ -122,10 +126,12 @@ func (j *Prowlarr) SearchSeriesTorrents(indexer *Indexer, name string) ([]*Torre
 		Get("/api/v1/search")
 
 	if err != nil {
+		log.Errorf("Failed to search for %v from %v: %v", name, indexer.Name, err)
 		return nil, err
 	}
 
 	if resp.IsError() {
+		log.Errorf("Failed to search for %v from %v: %v", name, indexer.Name, resp.Error())
 		return nil, fmt.Errorf("error response from prowlarr: %v", resp.Error())
 	}
 

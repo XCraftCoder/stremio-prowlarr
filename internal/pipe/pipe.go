@@ -75,14 +75,30 @@ func (p *Pipe[R]) Sink(sink Sink[R]) error {
 		p.Stop()
 	case <-p.stopped:
 	}
-	return <-p.errCh
+
+	select {
+	case err := <-p.errCh:
+		return err
+	default:
+		return nil
+	}
+}
+
+func (p *Pipe[R]) Channel(fn func(r *R, stopCh <-chan struct{}, outCh chan<- *R) error) {
+	stage := &channelStage[R]{
+		fn:          fn,
+		concurrency: defaultChannelConcurrency,
+		reportError: p.reportError,
+		stopped:     p.stopped,
+	}
+
+	p.stages = append(p.stages, stage)
 }
 
 func (p *Pipe[R]) Stop() {
 	select {
 	case <-p.stopped:
 	default:
-		close(p.errCh)
 		close(p.stopped)
 	}
 }
@@ -132,6 +148,10 @@ func (p *Pipe[R]) Filter(fn func(r *R) bool, opts ...SimpleStageOption[R]) {
 	}, opts...)
 }
 
+func (p *Pipe[R]) Stage(stage pipeStage[R]) {
+	p.stages = append(p.stages, stage)
+}
+
 func (p *Pipe[R]) startSource(outCh chan<- *R) {
 	defer close(outCh)
 	records, err := p.source()
@@ -140,7 +160,7 @@ func (p *Pipe[R]) startSource(outCh chan<- *R) {
 		return
 	}
 
-	sendRecords(records, outCh, p.stopped)
+	SendRecords(records, outCh, p.stopped)
 }
 
 func (p *Pipe[R]) startSink(sink Sink[R], inCh <-chan *R) {

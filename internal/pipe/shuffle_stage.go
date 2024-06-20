@@ -16,6 +16,12 @@ type shuffleStage[R any] struct {
 	bufSize int
 }
 
+func ShuffleBuffer[R any](size int) ShuffleStageOption[R] {
+	return func(s *shuffleStage[R]) {
+		s.bufSize = size
+	}
+}
+
 func (s *shuffleStage[R]) process(inCh <-chan *R, outCh chan<- *R) {
 	defer close(outCh)
 
@@ -103,10 +109,4 @@ func (pq *priorityQueue[R]) Pop() any {
 
 func (pq priorityQueue[R]) Peek() *R {
 	return pq.data[0]
-}
-
-func ShuffleBuffer[R any](size int) ShuffleStageOption[R] {
-	return func(s *shuffleStage[R]) {
-		s.bufSize = size
-	}
 }
