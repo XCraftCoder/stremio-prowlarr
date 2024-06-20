@@ -25,6 +25,7 @@ type config struct {
 
 var (
 	maskedPathPattern = regexp.MustCompile(`^/([\w%]+)/(?:configure|stream|download|manifest)`)
+	version           = "0.1.0-dev"
 )
 
 func main() {
@@ -62,7 +63,7 @@ func main() {
 		addon.WithName("Prowlarr"),
 		addon.WithProwlarr(cfg.ProwlarrURL, cfg.ProwlarrAPIKey),
 		addon.WithDevelopment(!cfg.Production),
-		addon.WithVersion("0.1.1"),
+		addon.WithVersion(version),
 	)
 
 	app.Get("/manifest.json", add.HandleGetManifest)
