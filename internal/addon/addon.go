@@ -566,8 +566,8 @@ func excludeTorrents(r *streamRecord) bool {
 }
 
 func checkTitleSimilarity(left, right string) int {
-	left = strings.TrimSpace(nonWordCharacter.ReplaceAllString(left, " "))
-	right = strings.TrimSpace(nonWordCharacter.ReplaceAllString(right, " "))
+	left = nonWordCharacter.ReplaceAllString(left, "")
+	right = nonWordCharacter.ReplaceAllString(right, "")
 	metrics := &metrics.Levenshtein{
 		CaseSensitive: false,
 		InsertCost:    2,
