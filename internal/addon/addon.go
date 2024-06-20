@@ -472,7 +472,6 @@ func (add *Addon) locateMediaFile(r *streamRecord) ([]*streamRecord, error) {
 	}
 
 	if r.MediaFile.FileSize >= maxSizeInBytes {
-		log.Infof("Skip %s, with %d because it's too big, %d", r.Torrent.Title, r.MediaFile.FileSize, maxSizeInBytes)
 		return nil, nil
 	}
 

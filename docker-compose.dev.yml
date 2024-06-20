@@ -4,7 +4,7 @@ services:
     environment:
       - PROWLARR_URL=${PROWLARR_URL:-"http://prowlarr:9696"}
       - PROWLARR_API_KEY=${PROWLARR_API_KEY}
-      - PRODUCTION=true
+      - PRODUCTION=false
     ports:
       - 7000:7000
     depends_on:
@@ -12,6 +12,10 @@ services:
     networks:
       - prowlarr-stremio
     restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: ./
 
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
@@ -27,6 +31,13 @@ services:
     ports:
       - 9696:9696
     restart: unless-stopped
+
+  cloudflared: 
+    image: cloudflare/cloudflared
+    restart: unless-stopped 
+    command: tunnel run --token="${CLOUD_FLARE_TUNNEL_TOKEN}"
+    networks:
+      - prowlarr-stremio
 
 networks:
   prowlarr-stremio:
